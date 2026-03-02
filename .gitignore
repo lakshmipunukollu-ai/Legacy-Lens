@@ -1,0 +1,31 @@
+# Environment
+.env
+.env.local
+.env*.local
+venv/
+__pycache__/
+*.pyc
+.python-version
+
+# Codebase (cloned repo)
+codebase/
+
+# Dependencies
+node_modules/
+.next/
+out/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Build
+dist/
+build/
+*.egg-info/
