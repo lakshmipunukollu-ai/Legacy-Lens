@@ -369,10 +369,10 @@ export default function Home() {
         />
       )}
 
-      {/* Sidebar */}
-      <aside
-        className={`fixed inset-y-0 left-0 z-40 w-[260px] flex-shrink-0 overflow-y-auto border-r border-gray-700 bg-gray-900 transition-transform md:relative md:translate-x-0 ${
-          sidebarOpen ? "translate-x-0" : "-translate-x-full"
+      {/* Sidebar - left column, always visible on md+ */}
+      <div
+        className={`w-64 flex-shrink-0 overflow-y-auto border-r border-gray-700 bg-gray-900 ${
+          sidebarOpen ? "fixed inset-y-0 left-0 z-40 translate-x-0 md:relative md:translate-x-0" : "hidden md:block"
         }`}
       >
         <div className="p-4 pt-14 md:pt-4">
@@ -401,9 +401,9 @@ export default function Home() {
             </>
           )}
         </div>
-      </aside>
+      </div>
 
-      {/* Main content */}
+      {/* Main content - right column */}
       <main className="flex-1 overflow-auto">
         <div className="mx-auto max-w-3xl px-6 py-16">
           <h1 className="mb-2 text-3xl font-bold tracking-tight">Legacy Lens</h1>
@@ -411,9 +411,9 @@ export default function Home() {
           Query the COBOL codebase in natural language
         </p>
 
-        {/* Tab bar */}
-        <div className="mb-6 flex items-center justify-between gap-4 border-b border-gray-700">
-          <div className="flex gap-1">
+        {/* Tab bar - always visible above main content */}
+        <div className="mb-6 flex items-center justify-between gap-4 border-b border-gray-700 overflow-x-auto">
+          <div className="flex gap-1 shrink-0">
             {TABS.map((tab) => (
               <button
                 key={tab.id}
@@ -492,12 +492,12 @@ export default function Home() {
                                 </span>
                                 {s.score != null && (
                                   <span
-                                    className={`rounded px-2 py-0.5 text-xs font-medium ${
+                                    className={`text-xs px-2 py-1 rounded-full font-medium ${
                                       s.score >= 80
-                                        ? "bg-green-900/50 text-green-400"
+                                        ? "bg-green-900 text-green-300"
                                         : s.score >= 50
-                                          ? "bg-yellow-900/50 text-yellow-400"
-                                          : "bg-red-900/50 text-red-400"
+                                          ? "bg-yellow-900 text-yellow-300"
+                                          : "bg-red-900 text-red-300"
                                     }`}
                                   >
                                     {typeof s.score === "number" ? s.score.toFixed(1) : s.score}% match
@@ -670,12 +670,12 @@ export default function Home() {
                   </span>
                   {s.score != null && (
                     <span
-                      className={`rounded px-2 py-0.5 text-xs font-medium ${
+                      className={`text-xs px-2 py-1 rounded-full font-medium ${
                         s.score >= 80
-                          ? "bg-green-900/50 text-green-400"
+                          ? "bg-green-900 text-green-300"
                           : s.score >= 50
-                            ? "bg-yellow-900/50 text-yellow-400"
-                            : "bg-red-900/50 text-red-400"
+                            ? "bg-yellow-900 text-yellow-300"
+                            : "bg-red-900 text-red-300"
                       }`}
                     >
                       {typeof s.score === "number" ? s.score.toFixed(1) : s.score}% match
