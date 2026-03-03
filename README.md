@@ -22,7 +22,7 @@ User Query
     ↓
 OpenAI text-embedding-3-small (1024 dims)
     ↓
-Pinecone Similarity Search (top-2 chunks, cosine)
+Pinecone Similarity Search (top-1 chunk, cosine)
     ↓
 Context Assembly (chunks + file/line metadata)
     ↓
