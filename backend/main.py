@@ -43,7 +43,7 @@ MAX_TOKENS = 300
 BROAD_QUERY_KEYWORDS = ("summary", "overview", "summarize", "describe the codebase", "what does this program do", "high level")
 
 # Short system prompts (under 100 words each)
-SYSTEM_PROMPT_QUERY = """COBOL expert. Answer ONLY from provided context. Cite file names and line numbers. If the asked identifier is not in context, say "I couldn't find [identifier] in the indexed codebase. Here is what I found that may be related:" then summarize the closest chunks. If the requested identifier, paragraph, or function does not exist in the retrieved context, respond in exactly 2 sentences maximum: one sentence saying it was not found, and one sentence describing the closest related code you did find. Never write more than 2 sentences for a not-found response."""
+SYSTEM_PROMPT_QUERY = """COBOL expert. Answer ONLY from provided context. Cite file names and line numbers. If the context contains OPEN, READ, WRITE, CLOSE, FAIL-ROUTINE, BAIL-OUT, or similar—that IS the answer; present it directly. Only say "I couldn't find" when the chunks are truly irrelevant (e.g., no file ops when asked about I/O). When context is relevant, answer confidently with specifics. Keep responses under 4 sentences."""
 SYSTEM_PROMPT_DEPS = """COBOL expert. Extract PERFORM call relationships. Return JSON array: [{{"caller":"X","callee":"Y","file":"...","line":N}}]. Use only provided code. If none: []."""
 SYSTEM_PROMPT_DOC = """You are a COBOL expert. Write technical documentation for the provided code in 3 sentences maximum. Include: what it does, what data it uses, and what calls it."""
 SYSTEM_PROMPT_BUSINESS_LOGIC = """You are a COBOL expert. Analyze the code and respond in exactly this format with no extra text:
@@ -136,6 +136,12 @@ ENTRY_POINT_KEYWORDS = ("main entry", "entry point", "start", "begin", "program 
 ENTRY_POINT_APPEND = """ Entry point means where execution STARTS (PROGRAM-ID in IDENTIFICATION DIVISION, or first paragraph of PROCEDURE DIVISION). STOP RUN is an EXIT point (where execution ends)—never treat it as an entry point. Answer only from chunks that show PROGRAM-ID, IDENTIFICATION DIVISION, or PROCEDURE DIVISION. Keep your answer under 3 sentences."""
 ENTRY_POINT_SEARCH_BOOST = " PROGRAM-ID IDENTIFICATION DIVISION PROCEDURE DIVISION"
 
+FILE_IO_KEYWORDS = ("file i/o", "file io", "open read write", "file operations", "i/o operations")
+FILE_IO_SEARCH_BOOST = " OPEN READ WRITE CLOSE INPUT OUTPUT"
+
+ERROR_HANDLING_KEYWORDS = ("error handling", "error patterns", "fail routine", "bail-out")
+ERROR_HANDLING_SEARCH_BOOST = " FAIL-ROUTINE BAIL-OUT ERROR EXCEPTION"
+
 
 @app.post("/query", response_model=QueryResponse)
 async def query(request: QueryRequest):
@@ -148,7 +154,13 @@ async def query(request: QueryRequest):
 
     vectorstore = get_vectorstore()
     k = TOP_K_BROAD if is_broad_query else TOP_K
-    search_query = (request.question + ENTRY_POINT_SEARCH_BOOST) if is_entry_point_query else request.question
+    search_query = request.question
+    if is_entry_point_query:
+        search_query += ENTRY_POINT_SEARCH_BOOST
+    elif any(kw in q_lower for kw in FILE_IO_KEYWORDS):
+        search_query += FILE_IO_SEARCH_BOOST
+    elif any(kw in q_lower for kw in ERROR_HANDLING_KEYWORDS):
+        search_query += ERROR_HANDLING_SEARCH_BOOST
     doc_scores = vectorstore.similarity_search_with_score(search_query, k=k)
 
     if not doc_scores:
