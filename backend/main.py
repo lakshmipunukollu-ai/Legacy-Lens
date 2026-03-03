@@ -18,6 +18,7 @@ from langchain_openai import OpenAIEmbeddings, ChatOpenAI
 from langchain_pinecone import PineconeVectorStore
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import StrOutputParser
+from tiktoken import encoding_for_model
 
 app = FastAPI(title="LegacyLens API")
 
@@ -29,6 +30,17 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Latency optimization constants
+SNIPPET_MAX_CHARS = 300
+CONTEXT_MAX_TOKENS = 8000
+TOP_K = 3
+MAX_TOKENS = 500
+
+# Short system prompts (under 100 words each)
+SYSTEM_PROMPT_QUERY = """COBOL expert. Answer ONLY from provided context. Cite file names and line numbers. If the asked identifier is not in context, say "I couldn't find [identifier] in the indexed codebase. Here is what I found that may be related:" then summarize the closest chunks."""
+SYSTEM_PROMPT_DEPS = """COBOL expert. Extract PERFORM call relationships. Return JSON array: [{{"caller":"X","callee":"Y","file":"...","line":N}}]. Use only provided code. If none: []."""
+SYSTEM_PROMPT_DOC = """Technical writer. Write concise docs for this COBOL code: purpose, inputs/outputs, key logic. Use only provided code."""
+
 
 class QueryRequest(BaseModel):
     question: str
@@ -36,18 +48,54 @@ class QueryRequest(BaseModel):
 
 class SourceItem(BaseModel):
     file: str
+    path: str = ""  # full path for /file drill-down (alias: source)
     paragraph: str
     start_line: int
     end_line: int
     snippet: str
     score: float  # 0-100 relevance percentage
-    source: str = ""  # full path for /file drill-down
+    source: str = ""  # full path for /file drill-down (kept for backward compat)
 
 
 class QueryResponse(BaseModel):
     answer: str
     sources: list[SourceItem]
     latency_ms: int
+
+
+def _truncate_context_to_tokens(text: str, max_tokens: int = CONTEXT_MAX_TOKENS) -> str:
+    """Truncate text to fit within token limit."""
+    enc = encoding_for_model("gpt-4")
+    tokens = enc.encode(text)
+    if len(tokens) <= max_tokens:
+        return text
+    return enc.decode(tokens[:max_tokens])
+
+
+def _build_context(docs: list, snippet_max_chars: int = SNIPPET_MAX_CHARS, max_tokens: int = CONTEXT_MAX_TOKENS) -> str:
+    """Build context from docs with truncated snippets, then enforce token limit."""
+    parts = []
+    for d in docs:
+        snippet = (d.page_content[:snippet_max_chars] + "...") if len(d.page_content) > snippet_max_chars else d.page_content
+        part = f"File: {d.metadata.get('file_name', 'unknown')}\nParagraph: {d.metadata.get('paragraph', '')}\nLines {d.metadata.get('start_line', '')}-{d.metadata.get('end_line', '')}\n\n{snippet}"
+        parts.append(part)
+    full = "\n\n---\n\n".join(parts)
+    return _truncate_context_to_tokens(full, max_tokens)
+
+
+def _get_pinecone_index():
+    """Get raw Pinecone index for stats. Returns (index, index_name) or (None, None)."""
+    index_host = os.getenv("PINECONE_INDEX_HOST", "").strip()
+    index_name = os.getenv("PINECONE_INDEX_NAME", "legacylens")
+    if index_host:
+        from pinecone import Pinecone
+        api_key = os.getenv("PINECONE_API_KEY", "").strip()
+        if not api_key:
+            return None, index_name
+        pc = Pinecone(api_key=api_key)
+        index = pc.Index(host=index_host)
+        return index, index_name
+    return None, index_name
 
 
 def get_vectorstore():
@@ -66,11 +114,6 @@ def get_vectorstore():
     return PineconeVectorStore.from_existing_index(index_name, embeddings)
 
 
-SYSTEM_PROMPT = """You are an expert assistant helping developers understand a legacy COBOL codebase.
-Answer based ONLY on the provided code context.
-Always cite file names and line numbers when referencing code."""
-
-
 def _distance_to_score(distance: float) -> float:
     """Convert cosine distance to 0-100 similarity percentage."""
     score_pct = round((1 - distance) * 100, 1)
@@ -82,8 +125,7 @@ async def query(request: QueryRequest):
     start_time = time.time()
     vectorstore = get_vectorstore()
 
-    # Retrieve top-3 matching chunks with scores (reduced for latency)
-    doc_scores = vectorstore.similarity_search_with_score(request.question, k=3)
+    doc_scores = vectorstore.similarity_search_with_score(request.question, k=TOP_K)
 
     if not doc_scores:
         latency_ms = round((time.time() - start_time) * 1000)
@@ -95,31 +137,25 @@ async def query(request: QueryRequest):
 
     docs = [d for d, _ in doc_scores]
     scores = [_distance_to_score(s) for _, s in doc_scores]
-
-    context = "\n\n---\n\n".join(
-        f"File: {d.metadata.get('file_name', 'unknown')}\n"
-        f"Paragraph: {d.metadata.get('paragraph', '')}\n"
-        f"Lines {d.metadata.get('start_line', '')}-{d.metadata.get('end_line', '')}\n\n"
-        f"{d.page_content}"
-        for d in docs
-    )
+    context = _build_context(docs)
 
     prompt = ChatPromptTemplate.from_messages([
-        ("system", SYSTEM_PROMPT),
+        ("system", SYSTEM_PROMPT_QUERY),
         ("human", "Context:\n{context}\n\nQuestion: {question}"),
     ])
 
-    llm = ChatOpenAI(model="gpt-4o", temperature=0, max_tokens=500)
+    llm = ChatOpenAI(model="gpt-4o", temperature=0, max_tokens=MAX_TOKENS)
     chain = prompt | llm | StrOutputParser()
     answer = chain.invoke({"context": context, "question": request.question})
 
     sources = [
         SourceItem(
             file=d.metadata.get("file_name", "unknown"),
+            path=d.metadata.get("source", ""),
             paragraph=d.metadata.get("paragraph", ""),
             start_line=d.metadata.get("start_line", 0),
             end_line=d.metadata.get("end_line", 0),
-            snippet=d.page_content[:500] + ("..." if len(d.page_content) > 500 else ""),
+            snippet=d.page_content[:SNIPPET_MAX_CHARS] + ("..." if len(d.page_content) > SNIPPET_MAX_CHARS else ""),
             score=scores[i],
             source=d.metadata.get("source", ""),
         )
@@ -133,6 +169,20 @@ async def query(request: QueryRequest):
 @app.get("/health")
 async def health():
     return {"status": "ok"}
+
+
+@app.get("/stats")
+async def stats():
+    """Return Pinecone index stats: total chunk count."""
+    index, index_name = _get_pinecone_index()
+    if index is None:
+        return {"total_chunks": 0, "index_name": index_name, "status": "ok", "message": "Pinecone not configured (PINECONE_INDEX_HOST required)"}
+    try:
+        stats = index.describe_index_stats()
+        total = stats.get("total_vector_count", 0)
+        return {"total_chunks": total, "index_name": index_name, "status": "ok"}
+    except Exception as e:
+        return {"total_chunks": 0, "index_name": index_name, "status": "error", "message": str(e)}
 
 
 # --- Full file drill-down ---
@@ -184,7 +234,7 @@ async def dependencies(request: QueryRequest):
     vectorstore = get_vectorstore()
     doc_scores = vectorstore.similarity_search_with_score(
         "PERFORM statement calling paragraph or section " + (request.question or "dependencies"),
-        k=3,
+        k=TOP_K,
     )
     if not doc_scores:
         latency_ms = round((time.time() - start_time) * 1000)
@@ -192,16 +242,13 @@ async def dependencies(request: QueryRequest):
 
     docs = [d for d, _ in doc_scores]
     scores = [_distance_to_score(s) for _, s in doc_scores]
+    context = _build_context(docs)
 
-    context = "\n\n---\n\n".join(
-        f"File: {d.metadata.get('file_name', '')} Lines {d.metadata.get('start_line', '')}-{d.metadata.get('end_line', '')}\n{d.page_content}"
-        for d in docs
-    )
     prompt = ChatPromptTemplate.from_messages([
-        ("system", "You are a COBOL expert. Extract PERFORM-style call relationships. Return a JSON array of objects with keys: caller (paragraph/section name), callee (paragraph name being performed), file, line. Use only the provided code. If none found return []."),
+        ("system", SYSTEM_PROMPT_DEPS),
         ("human", "Code:\n{context}\n\nQuestion or module: {question}\n\nJSON array of call graph items:"),
     ])
-    llm = ChatOpenAI(model="gpt-4o", temperature=0, max_tokens=500)
+    llm = ChatOpenAI(model="gpt-4o", temperature=0, max_tokens=MAX_TOKENS)
     chain = prompt | llm | StrOutputParser()
     raw = chain.invoke({"context": context, "question": request.question or "all PERFORM calls"})
     # Parse JSON from response (may be wrapped in markdown)
@@ -217,10 +264,11 @@ async def dependencies(request: QueryRequest):
     sources = [
         SourceItem(
             file=d.metadata.get("file_name", "unknown"),
+            path=d.metadata.get("source", ""),
             paragraph=d.metadata.get("paragraph", ""),
             start_line=d.metadata.get("start_line", 0),
             end_line=d.metadata.get("end_line", 0),
-            snippet=d.page_content[:500] + ("..." if len(d.page_content) > 500 else ""),
+            snippet=d.page_content[:SNIPPET_MAX_CHARS] + ("..." if len(d.page_content) > SNIPPET_MAX_CHARS else ""),
             score=scores[i],
             source=d.metadata.get("source", ""),
         )
@@ -247,7 +295,7 @@ async def generate_documentation(body: DocumentRequest):
     start_time = time.time()
     vectorstore = get_vectorstore()
     query = body.paragraph or body.file_name or "main program entry procedure division"
-    doc_scores = vectorstore.similarity_search_with_score(query, k=3)
+    doc_scores = vectorstore.similarity_search_with_score(query, k=TOP_K)
     if not doc_scores:
         latency_ms = round((time.time() - start_time) * 1000)
         return DocumentResponse(
@@ -257,24 +305,22 @@ async def generate_documentation(body: DocumentRequest):
         )
     docs = [d for d, _ in doc_scores]
     scores = [_distance_to_score(s) for _, s in doc_scores]
-    context = "\n\n---\n\n".join(
-        f"File: {d.metadata.get('file_name', '')} Paragraph: {d.metadata.get('paragraph', '')} Lines {d.metadata.get('start_line', '')}-{d.metadata.get('end_line', '')}\n{d.page_content}"
-        for d in docs
-    )
+    context = _build_context(docs)
     prompt = ChatPromptTemplate.from_messages([
-        ("system", "You are a technical writer. Write clear, concise technical documentation for the following COBOL code. Include purpose, inputs/outputs, and key logic. Use only the provided code."),
+        ("system", SYSTEM_PROMPT_DOC),
         ("human", "Code:\n{context}\n\nWrite technical documentation:"),
     ])
-    llm = ChatOpenAI(model="gpt-4o", temperature=0, max_tokens=500)
+    llm = ChatOpenAI(model="gpt-4o", temperature=0, max_tokens=MAX_TOKENS)
     chain = prompt | llm | StrOutputParser()
     documentation = chain.invoke({"context": context})
     sources = [
         SourceItem(
             file=d.metadata.get("file_name", "unknown"),
+            path=d.metadata.get("source", ""),
             paragraph=d.metadata.get("paragraph", ""),
             start_line=d.metadata.get("start_line", 0),
             end_line=d.metadata.get("end_line", 0),
-            snippet=d.page_content[:500] + ("..." if len(d.page_content) > 500 else ""),
+            snippet=d.page_content[:SNIPPET_MAX_CHARS] + ("..." if len(d.page_content) > SNIPPET_MAX_CHARS else ""),
             score=scores[i],
             source=d.metadata.get("source", ""),
         )
@@ -301,7 +347,7 @@ async def pattern_detection(body: PatternRequest):
     vectorstore = get_vectorstore()
     doc_scores = vectorstore.similarity_search_with_score(
         f"COBOL code containing {body.keyword} file operations or similar",
-        k=3,
+        k=TOP_K,
     )
     if not doc_scores:
         latency_ms = round((time.time() - start_time) * 1000)
@@ -315,10 +361,11 @@ async def pattern_detection(body: PatternRequest):
     sources = [
         SourceItem(
             file=d.metadata.get("file_name", "unknown"),
+            path=d.metadata.get("source", ""),
             paragraph=d.metadata.get("paragraph", ""),
             start_line=d.metadata.get("start_line", 0),
             end_line=d.metadata.get("end_line", 0),
-            snippet=d.page_content[:500] + ("..." if len(d.page_content) > 500 else ""),
+            snippet=d.page_content[:SNIPPET_MAX_CHARS] + ("..." if len(d.page_content) > SNIPPET_MAX_CHARS else ""),
             score=scores[i],
             source=d.metadata.get("source", ""),
         )

@@ -8,6 +8,7 @@ type TabId = "query" | "dependencies" | "document" | "patterns";
 
 type SourceItem = {
   file: string;
+  path?: string;
   paragraph: string;
   start_line: number;
   end_line: number;
@@ -26,23 +27,24 @@ const TABS: { id: TabId; label: string }[] = [
 const EXAMPLE_QUERIES: Record<TabId, string[]> = {
   query: [
     "Where is the main entry point of this program?",
-    "What functions modify the CUSTOMER-RECORD?",
-    "Explain what the CALCULATE-INTEREST paragraph does",
+    "Find all file I/O operations",
+    "Show me error handling patterns in this codebase",
+    "What does the PROCEDURE DIVISION do?",
   ],
   dependencies: [
     "What does MAIN-SECTION call?",
-    "Show PERFORM dependencies",
-    "What paragraphs does PROCEDURE DIVISION call?",
+    "What calls the STOP-RUN paragraph?",
+    "Show the call graph for this program",
   ],
   document: [
-    "IDENTIFICATION DIVISION",
-    "PROCEDURE DIVISION",
-    "main program entry",
+    "Generate docs for the main entry point",
+    "Document the file I/O section",
+    "Explain the PROCEDURE DIVISION",
   ],
   patterns: [
-    "OPEN READ WRITE",
-    "FILE I/O operations",
-    "PERFORM UNTIL",
+    "Find all OPEN READ WRITE operations",
+    "Show all error handling patterns",
+    "Find all PERFORM statements",
   ],
 };
 
@@ -318,7 +320,7 @@ export default function Home() {
                             : "bg-red-900/50 text-red-400"
                       }`}
                     >
-                      {s.score}% match
+                      {typeof s.score === "number" ? s.score.toFixed(1) : s.score}% match
                     </span>
                   )}
                 </div>
@@ -331,9 +333,9 @@ export default function Home() {
                 >
                   {s.snippet}
                 </SyntaxHighlighter>
-                {s.source && (
+                {(s.source || s.path) && (
                   <button
-                    onClick={() => handleViewFullFile(s.source!, i)}
+                    onClick={() => handleViewFullFile(s.source || s.path || "", i)}
                     className="mt-2 rounded border border-gray-600 bg-gray-800 px-3 py-1.5 text-sm text-gray-300 hover:bg-gray-700"
                   >
                     {expandedSourceIdx === i && expandedFile ? "Collapse" : "View full file"}
