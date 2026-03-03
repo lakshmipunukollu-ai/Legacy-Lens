@@ -101,8 +101,19 @@ export default function Home() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [fileModal, setFileModal] = useState<{ path: string; content: string; line_count: number } | null>(null);
   const [selectedFilePath, setSelectedFilePath] = useState<string | null>(null);
+  const [expandedMessageIdx, setExpandedMessageIdx] = useState<number | null>(null);
 
   const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+
+  const askedQuestions = new Set(chatHistory.filter((m) => m.role === "user").map((m) => m.content.trim().toLowerCase()));
+  const suggestedQueries = EXAMPLE_QUERIES[activeTab].filter(
+    (q) => !askedQuestions.has(q.trim().toLowerCase())
+  );
+
+  const formatLineRange = (start: number, end: number) => {
+    if (end > start && end - start > 1000) return `L${start}–${end} (large range)`;
+    return `L${start}–${end}`;
+  };
 
   useEffect(() => {
     fetch(`${apiUrl}/files`)
@@ -182,8 +193,10 @@ export default function Home() {
       setChatHistory([]);
       setExpandedSourcesForMessage(null);
       setExpandedChatSource(null);
+      setExpandedMessageIdx(null);
     } catch {
       setChatHistory([]);
+      setExpandedMessageIdx(null);
     }
   };
 
@@ -385,7 +398,10 @@ export default function Home() {
             )}
           </div>
           {fileTree?.error || (fileTree && fileTree.tree.length === 0) ? (
-            <p className="text-sm text-gray-500">File tree not available in production</p>
+            <div className="space-y-2 text-sm text-gray-500">
+              <p>File tree available when running locally.</p>
+              <p className="text-xs">Clone the repo and run the frontend to browse the codebase.</p>
+            </div>
           ) : (
             <>
               <input
@@ -441,133 +457,143 @@ export default function Home() {
         {/* Chat history (Ask a Question tab only) */}
         {activeTab === "query" && chatHistory.length > 0 && (
           <div className="mb-6 space-y-4">
-            {chatHistory.map((msg, msgIdx) => (
-              <div
-                key={msgIdx}
-                className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}
-              >
+            {chatHistory.map((msg, msgIdx) => {
+              const isExpanded = expandedMessageIdx === msgIdx;
+              const contentPreviewLen = 180;
+              const showExpand = msg.role === "assistant" && msg.content.length > contentPreviewLen;
+              const displayContent = showExpand && !isExpanded
+                ? msg.content.slice(0, contentPreviewLen) + (msg.content.length > contentPreviewLen ? "…" : "")
+                : msg.content;
+
+              return (
                 <div
-                  className={`max-w-[80%] rounded-lg px-4 py-3 ${
-                    msg.role === "user"
-                      ? "bg-blue-600 text-white"
-                      : "bg-gray-800 text-gray-200"
-                  }`}
+                  key={msgIdx}
+                  className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}
                 >
-                  <div className="whitespace-pre-wrap">{msg.content}</div>
-                  {msg.role === "assistant" && msg.latencyMs != null && (
-                    <div className="mt-2 text-xs text-gray-500">
-                      ⚡ {msg.latencyMs}ms
-                    </div>
-                  )}
-                  {msg.role === "assistant" && msg.sources && msg.sources.length > 0 && (
-                    <div className="mt-2">
+                  <div
+                    className={`max-w-[85%] rounded-lg px-4 py-3 ${
+                      msg.role === "user"
+                        ? "bg-blue-600 text-white"
+                        : "bg-gray-800 text-gray-200"
+                    }`}
+                  >
+                    <div className="whitespace-pre-wrap">{displayContent}</div>
+                    {showExpand && (
                       <button
-                        onClick={() =>
-                          setExpandedSourcesForMessage(
-                            expandedSourcesForMessage === msgIdx ? null : msgIdx
-                          )
-                        }
-                        className="text-xs text-emerald-400 hover:text-emerald-300"
+                        onClick={() => setExpandedMessageIdx(isExpanded ? null : msgIdx)}
+                        className="mt-1 text-xs text-emerald-400 hover:text-emerald-300"
                       >
-                        {expandedSourcesForMessage === msgIdx
-                          ? "Hide sources ▲"
-                          : "Show sources ▼"}
+                        {isExpanded ? "Show less" : "Show more"}
                       </button>
-                      {expandedSourcesForMessage === msgIdx && (
-                        <div className="mt-3 space-y-3">
-                          {msg.sources.map((s, sIdx) => (
-                            <div
-                              key={sIdx}
-                              className="rounded-lg border border-gray-800 bg-gray-900/50 p-4"
-                            >
-                              <div className="mb-2 flex flex-wrap gap-2 items-center">
-                                <span className="rounded bg-emerald-900/50 px-2 py-0.5 text-xs font-medium text-emerald-400">
-                                  {s.file}
-                                </span>
-                                <span className="rounded bg-gray-700 px-2 py-0.5 text-xs text-gray-300">
-                                  {s.paragraph}
-                                </span>
-                                <span className="rounded bg-gray-700 px-2 py-0.5 text-xs text-gray-400">
-                                  L{s.start_line}–{s.end_line}
-                                </span>
-                                {s.score != null && (
-                                  <span
-                                    className={`text-xs px-2 py-1 rounded-full font-medium ${
-                                      s.score >= 80
-                                        ? "bg-green-900 text-green-300"
-                                        : s.score >= 50
-                                          ? "bg-yellow-900 text-yellow-300"
-                                          : "bg-red-900 text-red-300"
-                                    }`}
-                                  >
-                                    {typeof s.score === "number" ? s.score.toFixed(1) : s.score}% match
-                                  </span>
-                                )}
-                              </div>
-                              <SyntaxHighlighter
-                                language="cobol"
-                                style={vscDarkPlus}
-                                customStyle={{ borderRadius: "8px", fontSize: "13px" }}
-                                PreTag="div"
-                                codeTagProps={{ style: { fontFamily: "var(--font-geist-mono)" } }}
+                    )}
+                    {msg.role === "assistant" && msg.latencyMs != null && (
+                      <div className="mt-2 text-xs text-gray-500">⚡ {msg.latencyMs}ms</div>
+                    )}
+                    {msg.role === "assistant" && msg.sources && msg.sources.length > 0 && (
+                      <div className="mt-3">
+                        <button
+                          onClick={() =>
+                            setExpandedSourcesForMessage(
+                              expandedSourcesForMessage === msgIdx ? null : msgIdx
+                            )
+                          }
+                          className="text-xs text-emerald-400 hover:text-emerald-300"
+                        >
+                          {expandedSourcesForMessage === msgIdx
+                            ? "Hide sources ▲"
+                            : `Show ${msg.sources.length} source${msg.sources.length === 1 ? "" : "s"} ▼`}
+                        </button>
+                        {expandedSourcesForMessage === msgIdx && (
+                          <div className="mt-3 space-y-2">
+                            {msg.sources.map((s, sIdx) => (
+                              <div
+                                key={sIdx}
+                                className="rounded-lg border border-gray-700 bg-gray-900/80 p-3"
                               >
-                                {s.snippet}
-                              </SyntaxHighlighter>
-                              {(s.source || s.path) && (
-                                <button
-                                  onClick={() => {
-                                    if (
-                                      expandedChatSource?.messageIdx === msgIdx &&
-                                      expandedChatSource?.sourceIdx === sIdx
-                                    ) {
-                                      setExpandedChatSource(null);
-                                      setExpandedFile(null);
-                                      return;
-                                    }
-                                    setExpandedChatSource({ messageIdx: msgIdx, sourceIdx: sIdx });
-                                    fetch(`${apiUrl}/file?path=${encodeURIComponent(s.source || s.path || "")}`)
-                                      .then((r) => r.json())
-                                      .then((d) => {
-                                        if (d.error || !d.content) return;
-                                        setExpandedFile({ path: d.path, content: d.content, line_count: d.line_count });
-                                      });
-                                  }}
-                                  className="mt-2 rounded border border-gray-600 bg-gray-800 px-3 py-1.5 text-sm text-gray-300 hover:bg-gray-700"
-                                >
-                                  {expandedChatSource?.messageIdx === msgIdx &&
-                                  expandedChatSource?.sourceIdx === sIdx &&
-                                  expandedFile
-                                    ? "Collapse"
-                                    : "View full file"}
-                                </button>
-                              )}
-                              {expandedChatSource?.messageIdx === msgIdx &&
-                                expandedChatSource?.sourceIdx === sIdx &&
-                                expandedFile && (
-                                  <div className="mt-4 rounded-lg border border-gray-700 bg-gray-900/50 p-4">
-                                    <div className="mb-2 text-sm text-gray-400">
-                                      Full file: {expandedFile.path} ({expandedFile.line_count} lines)
-                                    </div>
-                                    <SyntaxHighlighter
-                                      language="cobol"
-                                      style={vscDarkPlus}
-                                      customStyle={{ borderRadius: "8px", fontSize: "13px", maxHeight: "400px" }}
-                                      PreTag="div"
-                                      showLineNumbers
+                                <div className="mb-2 grid grid-cols-[1fr_auto_auto] gap-2 items-center text-xs sm:flex sm:flex-wrap">
+                                  <span className="font-medium text-emerald-400 truncate" title={s.file}>
+                                    {s.file}
+                                  </span>
+                                  <span className="text-gray-400">
+                                    {formatLineRange(s.start_line, s.end_line)}
+                                  </span>
+                                  {s.score != null && (
+                                    <span
+                                      className={`shrink-0 px-2 py-0.5 rounded-full font-medium ${
+                                        s.score >= 80 ? "bg-green-900 text-green-300" :
+                                        s.score >= 50 ? "bg-yellow-900 text-yellow-300" :
+                                        "bg-red-900 text-red-300"
+                                      }`}
                                     >
-                                      {expandedFile.content}
-                                    </SyntaxHighlighter>
-                                  </div>
+                                      {typeof s.score === "number" ? s.score.toFixed(1) : s.score}%
+                                    </span>
+                                  )}
+                                </div>
+                                <SyntaxHighlighter
+                                  language="cobol"
+                                  style={vscDarkPlus}
+                                  customStyle={{ borderRadius: "6px", fontSize: "12px" }}
+                                  PreTag="div"
+                                  codeTagProps={{ style: { fontFamily: "var(--font-geist-mono)" } }}
+                                >
+                                  {s.snippet}
+                                </SyntaxHighlighter>
+                                {(s.source || s.path) && (
+                                  <button
+                                    onClick={() => {
+                                      if (
+                                        expandedChatSource?.messageIdx === msgIdx &&
+                                        expandedChatSource?.sourceIdx === sIdx
+                                      ) {
+                                        setExpandedChatSource(null);
+                                        setExpandedFile(null);
+                                        return;
+                                      }
+                                      setExpandedChatSource({ messageIdx: msgIdx, sourceIdx: sIdx });
+                                      fetch(`${apiUrl}/file?path=${encodeURIComponent(s.source || s.path || "")}`)
+                                        .then((r) => r.json())
+                                        .then((d) => {
+                                          if (d.error || !d.content) return;
+                                          setExpandedFile({ path: d.path, content: d.content, line_count: d.line_count });
+                                        });
+                                    }}
+                                    className="mt-2 rounded border border-gray-600 bg-gray-800 px-2 py-1 text-xs text-gray-300 hover:bg-gray-700"
+                                  >
+                                    {expandedChatSource?.messageIdx === msgIdx &&
+                                    expandedChatSource?.sourceIdx === sIdx &&
+                                    expandedFile
+                                      ? "Collapse"
+                                      : "View full file"}
+                                  </button>
                                 )}
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  )}
+                                {expandedChatSource?.messageIdx === msgIdx &&
+                                  expandedChatSource?.sourceIdx === sIdx &&
+                                  expandedFile && (
+                                    <div className="mt-3 rounded border border-gray-700 bg-gray-950 p-3">
+                                      <div className="mb-1 text-xs text-gray-400">
+                                        {expandedFile.path} ({expandedFile.line_count} lines)
+                                      </div>
+                                      <SyntaxHighlighter
+                                        language="cobol"
+                                        style={vscDarkPlus}
+                                        customStyle={{ borderRadius: "6px", fontSize: "12px", maxHeight: "300px" }}
+                                        PreTag="div"
+                                        showLineNumbers
+                                      >
+                                        {expandedFile.content}
+                                      </SyntaxHighlighter>
+                                    </div>
+                                  )}
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
 
@@ -593,9 +619,9 @@ export default function Home() {
           </div>
         </div>
 
-        {/* Example chips */}
+        {/* Example chips - hide ones already asked */}
         <div className="mb-8 flex flex-wrap gap-2">
-          {EXAMPLE_QUERIES[activeTab].map((q) => (
+          {(suggestedQueries.length > 0 ? suggestedQueries : EXAMPLE_QUERIES[activeTab]).map((q) => (
             <button
               key={q}
               onClick={() =>
@@ -647,45 +673,41 @@ export default function Home() {
           </div>
         )}
 
-        {/* Sources (non-query tabs only) */}
+        {/* Sources (non-query tabs only) - structured cards */}
         {activeTab !== "query" && sources.length > 0 && (
           <div className="space-y-4">
             <h2 className="text-sm font-semibold uppercase tracking-wider text-gray-400">
-              Sources
+              Sources ({sources.length})
             </h2>
             {sources.map((s, i) => (
               <div
                 key={i}
-                className="rounded-lg border border-gray-800 bg-gray-900/50 p-4"
+                className="rounded-lg border border-gray-700 bg-gray-900/80 p-3"
               >
-                <div className="mb-2 flex flex-wrap gap-2 items-center">
-                  <span className="rounded bg-emerald-900/50 px-2 py-0.5 text-xs font-medium text-emerald-400">
+                <div className="mb-2 flex flex-wrap gap-2 items-center text-xs">
+                  <span className="font-medium text-emerald-400 truncate" title={s.file}>
                     {s.file}
                   </span>
-                  <span className="rounded bg-gray-700 px-2 py-0.5 text-xs text-gray-300">
-                    {s.paragraph}
-                  </span>
-                  <span className="rounded bg-gray-700 px-2 py-0.5 text-xs text-gray-400">
-                    L{s.start_line}–{s.end_line}
+                  <span className="text-gray-400">{s.paragraph}</span>
+                  <span className="text-gray-400">
+                    {formatLineRange(s.start_line, s.end_line)}
                   </span>
                   {s.score != null && (
                     <span
-                      className={`text-xs px-2 py-1 rounded-full font-medium ${
-                        s.score >= 80
-                          ? "bg-green-900 text-green-300"
-                          : s.score >= 50
-                            ? "bg-yellow-900 text-yellow-300"
-                            : "bg-red-900 text-red-300"
+                      className={`shrink-0 px-2 py-0.5 rounded-full font-medium ${
+                        s.score >= 80 ? "bg-green-900 text-green-300" :
+                        s.score >= 50 ? "bg-yellow-900 text-yellow-300" :
+                        "bg-red-900 text-red-300"
                       }`}
                     >
-                      {typeof s.score === "number" ? s.score.toFixed(1) : s.score}% match
+                      {typeof s.score === "number" ? s.score.toFixed(1) : s.score}%
                     </span>
                   )}
                 </div>
                 <SyntaxHighlighter
                   language="cobol"
                   style={vscDarkPlus}
-                  customStyle={{ borderRadius: "8px", fontSize: "13px" }}
+                  customStyle={{ borderRadius: "6px", fontSize: "12px" }}
                   PreTag="div"
                   codeTagProps={{ style: { fontFamily: "var(--font-geist-mono)" } }}
                 >
@@ -694,20 +716,20 @@ export default function Home() {
                 {(s.source || s.path) && (
                   <button
                     onClick={() => handleViewFullFile(s.source || s.path || "", i)}
-                    className="mt-2 rounded border border-gray-600 bg-gray-800 px-3 py-1.5 text-sm text-gray-300 hover:bg-gray-700"
+                    className="mt-2 rounded border border-gray-600 bg-gray-800 px-2 py-1 text-xs text-gray-300 hover:bg-gray-700"
                   >
                     {expandedSourceIdx === i && expandedFile ? "Collapse" : "View full file"}
                   </button>
                 )}
                 {expandedSourceIdx === i && expandedFile && (
-                  <div className="mt-4 rounded-lg border border-gray-700 bg-gray-900/50 p-4">
-                    <div className="mb-2 text-sm text-gray-400">
-                      Full file: {expandedFile.path} ({expandedFile.line_count} lines)
+                  <div className="mt-3 rounded border border-gray-700 bg-gray-950 p-3">
+                    <div className="mb-1 text-xs text-gray-400">
+                      {expandedFile.path} ({expandedFile.line_count} lines)
                     </div>
                     <SyntaxHighlighter
                       language="cobol"
                       style={vscDarkPlus}
-                      customStyle={{ borderRadius: "8px", fontSize: "13px", maxHeight: "400px" }}
+                      customStyle={{ borderRadius: "6px", fontSize: "12px", maxHeight: "300px" }}
                       PreTag="div"
                       showLineNumbers
                     >
