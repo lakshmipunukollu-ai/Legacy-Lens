@@ -6,6 +6,7 @@ FastAPI server with RAG endpoint for COBOL codebase queries.
 import json
 import os
 import time
+from collections import defaultdict
 from pathlib import Path
 from dotenv import load_dotenv
 load_dotenv(Path(__file__).resolve().parent / ".env")
@@ -30,6 +31,8 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+conversation_history: dict = defaultdict(list)
+
 # Latency optimization constants
 SNIPPET_MAX_CHARS = 100
 CONTEXT_MAX_TOKENS = 2000
@@ -49,6 +52,7 @@ Business Impact: [one sentence]"""
 
 class QueryRequest(BaseModel):
     question: str
+    session_id: str = "default"
 
 
 class SourceItem(BaseModel):
@@ -151,14 +155,29 @@ async def query(request: QueryRequest):
     scores = [_distance_to_score(s) for _, s in doc_scores]
     context = _build_context(docs)
 
+    # Get last 6 messages from conversation history
+    history = conversation_history[request.session_id][-6:]
+    history_messages = []
+    for h in history:
+        role = "human" if h["role"] == "user" else "ai"
+        history_messages.append((role, h["content"]))
+
     prompt = ChatPromptTemplate.from_messages([
         ("system", system_prompt),
+        *history_messages,
         ("human", "Context:\n{context}\n\nQuestion: {question}"),
     ])
 
     llm = ChatOpenAI(model="gpt-4o-mini", temperature=0, max_tokens=MAX_TOKENS)
     chain = prompt | llm | StrOutputParser()
     answer = chain.invoke({"context": context, "question": request.question})
+
+    # Append to conversation history and cap at 6 messages
+    conversation_history[request.session_id].append({"role": "user", "content": request.question})
+    conversation_history[request.session_id].append({"role": "assistant", "content": answer})
+    while len(conversation_history[request.session_id]) > 6:
+        conversation_history[request.session_id].pop(0)
+        conversation_history[request.session_id].pop(0)
 
     sources = [
         SourceItem(
@@ -176,6 +195,17 @@ async def query(request: QueryRequest):
 
     latency_ms = round((time.time() - start_time) * 1000)
     return QueryResponse(answer=answer, sources=sources, latency_ms=latency_ms)
+
+
+class ClearHistoryRequest(BaseModel):
+    session_id: str = "default"
+
+
+@app.post("/clear-history")
+async def clear_history(body: ClearHistoryRequest):
+    """Clear conversation history for a session."""
+    conversation_history[body.session_id] = []
+    return {"status": "cleared", "session_id": body.session_id}
 
 
 @app.get("/health")

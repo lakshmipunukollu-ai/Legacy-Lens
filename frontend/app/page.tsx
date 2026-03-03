@@ -62,8 +62,17 @@ const PLACEHOLDERS: Record<TabId, string> = {
   "business-logic": "Describe a section to extract business rules from (e.g. interest calculation, file processing)",
 };
 
+type ChatMessage = {
+  role: "user" | "assistant";
+  content: string;
+  sources?: SourceItem[];
+  latencyMs?: number;
+};
+
 export default function Home() {
   const [activeTab, setActiveTab] = useState<TabId>("query");
+  const [sessionId] = useState(() => Math.random().toString(36).substring(2, 15));
+  const [chatHistory, setChatHistory] = useState<ChatMessage[]>([]);
   const [queryInput, setQueryInput] = useState("");
   const [docInput, setDocInput] = useState("");
   const [patternInput, setPatternInput] = useState("OPEN READ WRITE");
@@ -76,6 +85,8 @@ export default function Home() {
   const [latencyMs, setLatencyMs] = useState<number | null>(null);
   const [expandedFile, setExpandedFile] = useState<{ path: string; content: string; line_count: number } | null>(null);
   const [expandedSourceIdx, setExpandedSourceIdx] = useState<number | null>(null);
+  const [expandedSourcesForMessage, setExpandedSourcesForMessage] = useState<number | null>(null);
+  const [expandedChatSource, setExpandedChatSource] = useState<{ messageIdx: number; sourceIdx: number } | null>(null);
 
   const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
@@ -101,29 +112,58 @@ export default function Home() {
     return patternInput.trim();
   };
 
-  const handleSubmit = async () => {
-    if (!canSubmit()) return;
+  const handleClearConversation = async () => {
+    try {
+      await fetch(`${apiUrl}/clear-history`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ session_id: sessionId }),
+      });
+      setChatHistory([]);
+      setExpandedSourcesForMessage(null);
+      setExpandedChatSource(null);
+    } catch {
+      setChatHistory([]);
+    }
+  };
+
+  const handleSubmit = async (overrideQuestion?: string) => {
+    const canSend = activeTab === "query"
+      ? (overrideQuestion ? overrideQuestion.trim() : queryInput.trim())
+      : canSubmit();
+    if (!canSend) return;
     setLoading(true);
     setError(null);
-    setAnswer("");
-    setSources([]);
-    setCallGraph([]);
-    setLatencyMs(null);
+    if (activeTab !== "query") {
+      setAnswer("");
+      setSources([]);
+      setCallGraph([]);
+      setLatencyMs(null);
+    }
     setExpandedFile(null);
     setExpandedSourceIdx(null);
 
     try {
       if (activeTab === "query") {
+        const question = (overrideQuestion ?? queryInput).trim();
         const res = await fetch(`${apiUrl}/query`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ question: queryInput.trim() }),
+          body: JSON.stringify({ question, session_id: sessionId }),
         });
         if (!res.ok) throw new Error(`API error: ${res.status}`);
         const data = await res.json();
-        setAnswer(data.answer);
-        setSources(data.sources || []);
-        setLatencyMs(data.latency_ms ?? null);
+        setChatHistory((prev) => [
+          ...prev,
+          { role: "user" as const, content: question },
+          {
+            role: "assistant" as const,
+            content: data.answer,
+            sources: data.sources || [],
+            latencyMs: data.latency_ms ?? undefined,
+          },
+        ]);
+        if (!overrideQuestion) setQueryInput("");
       } else if (activeTab === "dependencies") {
         const res = await fetch(`${apiUrl}/dependencies`, {
           method: "POST",
@@ -224,21 +264,164 @@ export default function Home() {
         </p>
 
         {/* Tab bar */}
-        <div className="mb-6 flex gap-1 border-b border-gray-700">
-          {TABS.map((tab) => (
+        <div className="mb-6 flex items-center justify-between gap-4 border-b border-gray-700">
+          <div className="flex gap-1">
+            {TABS.map((tab) => (
+              <button
+                key={tab.id}
+                onClick={() => setActiveTab(tab.id)}
+                className={`px-4 py-2 text-sm font-medium transition ${
+                  activeTab === tab.id
+                    ? "border-b-2 border-blue-500 text-blue-400"
+                    : "text-gray-400 hover:text-gray-200"
+                }`}
+              >
+                {tab.label}
+              </button>
+            ))}
+          </div>
+          {activeTab === "query" && (
             <button
-              key={tab.id}
-              onClick={() => setActiveTab(tab.id)}
-              className={`px-4 py-2 text-sm font-medium transition ${
-                activeTab === tab.id
-                  ? "border-b-2 border-blue-500 text-blue-400"
-                  : "text-gray-400 hover:text-gray-200"
-              }`}
+              onClick={handleClearConversation}
+              className="rounded border border-gray-600 bg-gray-800 px-3 py-1.5 text-sm text-gray-300 hover:bg-gray-700"
             >
-              {tab.label}
+              🗑 Clear conversation
             </button>
-          ))}
+          )}
         </div>
+
+        {/* Chat history (Ask a Question tab only) */}
+        {activeTab === "query" && chatHistory.length > 0 && (
+          <div className="mb-6 space-y-4">
+            {chatHistory.map((msg, msgIdx) => (
+              <div
+                key={msgIdx}
+                className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}
+              >
+                <div
+                  className={`max-w-[80%] rounded-lg px-4 py-3 ${
+                    msg.role === "user"
+                      ? "bg-blue-600 text-white"
+                      : "bg-gray-800 text-gray-200"
+                  }`}
+                >
+                  <div className="whitespace-pre-wrap">{msg.content}</div>
+                  {msg.role === "assistant" && msg.latencyMs != null && (
+                    <div className="mt-2 text-xs text-gray-500">
+                      ⚡ {msg.latencyMs}ms
+                    </div>
+                  )}
+                  {msg.role === "assistant" && msg.sources && msg.sources.length > 0 && (
+                    <div className="mt-2">
+                      <button
+                        onClick={() =>
+                          setExpandedSourcesForMessage(
+                            expandedSourcesForMessage === msgIdx ? null : msgIdx
+                          )
+                        }
+                        className="text-xs text-emerald-400 hover:text-emerald-300"
+                      >
+                        {expandedSourcesForMessage === msgIdx
+                          ? "Hide sources ▲"
+                          : "Show sources ▼"}
+                      </button>
+                      {expandedSourcesForMessage === msgIdx && (
+                        <div className="mt-3 space-y-3">
+                          {msg.sources.map((s, sIdx) => (
+                            <div
+                              key={sIdx}
+                              className="rounded-lg border border-gray-800 bg-gray-900/50 p-4"
+                            >
+                              <div className="mb-2 flex flex-wrap gap-2 items-center">
+                                <span className="rounded bg-emerald-900/50 px-2 py-0.5 text-xs font-medium text-emerald-400">
+                                  {s.file}
+                                </span>
+                                <span className="rounded bg-gray-700 px-2 py-0.5 text-xs text-gray-300">
+                                  {s.paragraph}
+                                </span>
+                                <span className="rounded bg-gray-700 px-2 py-0.5 text-xs text-gray-400">
+                                  L{s.start_line}–{s.end_line}
+                                </span>
+                                {s.score != null && (
+                                  <span
+                                    className={`rounded px-2 py-0.5 text-xs font-medium ${
+                                      s.score >= 80
+                                        ? "bg-green-900/50 text-green-400"
+                                        : s.score >= 50
+                                          ? "bg-yellow-900/50 text-yellow-400"
+                                          : "bg-red-900/50 text-red-400"
+                                    }`}
+                                  >
+                                    {typeof s.score === "number" ? s.score.toFixed(1) : s.score}% match
+                                  </span>
+                                )}
+                              </div>
+                              <SyntaxHighlighter
+                                language="cobol"
+                                style={vscDarkPlus}
+                                customStyle={{ borderRadius: "8px", fontSize: "13px" }}
+                                PreTag="div"
+                                codeTagProps={{ style: { fontFamily: "var(--font-geist-mono)" } }}
+                              >
+                                {s.snippet}
+                              </SyntaxHighlighter>
+                              {(s.source || s.path) && (
+                                <button
+                                  onClick={() => {
+                                    if (
+                                      expandedChatSource?.messageIdx === msgIdx &&
+                                      expandedChatSource?.sourceIdx === sIdx
+                                    ) {
+                                      setExpandedChatSource(null);
+                                      setExpandedFile(null);
+                                      return;
+                                    }
+                                    setExpandedChatSource({ messageIdx: msgIdx, sourceIdx: sIdx });
+                                    fetch(`${apiUrl}/file?path=${encodeURIComponent(s.source || s.path || "")}`)
+                                      .then((r) => r.json())
+                                      .then((d) => {
+                                        if (d.error || !d.content) return;
+                                        setExpandedFile({ path: d.path, content: d.content, line_count: d.line_count });
+                                      });
+                                  }}
+                                  className="mt-2 rounded border border-gray-600 bg-gray-800 px-3 py-1.5 text-sm text-gray-300 hover:bg-gray-700"
+                                >
+                                  {expandedChatSource?.messageIdx === msgIdx &&
+                                  expandedChatSource?.sourceIdx === sIdx &&
+                                  expandedFile
+                                    ? "Collapse"
+                                    : "View full file"}
+                                </button>
+                              )}
+                              {expandedChatSource?.messageIdx === msgIdx &&
+                                expandedChatSource?.sourceIdx === sIdx &&
+                                expandedFile && (
+                                  <div className="mt-4 rounded-lg border border-gray-700 bg-gray-900/50 p-4">
+                                    <div className="mb-2 text-sm text-gray-400">
+                                      Full file: {expandedFile.path} ({expandedFile.line_count} lines)
+                                    </div>
+                                    <SyntaxHighlighter
+                                      language="cobol"
+                                      style={vscDarkPlus}
+                                      customStyle={{ borderRadius: "8px", fontSize: "13px", maxHeight: "400px" }}
+                                      PreTag="div"
+                                      showLineNumbers
+                                    >
+                                      {expandedFile.content}
+                                    </SyntaxHighlighter>
+                                  </div>
+                                )}
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
 
         {/* Input area */}
         <div className="mb-6">
@@ -267,7 +450,11 @@ export default function Home() {
           {EXAMPLE_QUERIES[activeTab].map((q) => (
             <button
               key={q}
-              onClick={() => setInput(q)}
+              onClick={() =>
+                activeTab === "query"
+                  ? handleSubmit(q)
+                  : setInput(q)
+              }
               className="rounded-full border border-gray-600 bg-gray-900 px-4 py-2 text-sm text-gray-300 transition hover:border-emerald-600 hover:text-emerald-400"
             >
               {q}
@@ -297,8 +484,8 @@ export default function Home() {
           </div>
         )}
 
-        {/* Answer */}
-        {answer && (
+        {/* Answer (non-query tabs only) */}
+        {activeTab !== "query" && answer && (
           <div className="mb-8 rounded-lg border border-gray-800 bg-gray-900/50 p-6">
             <h2 className="mb-3 text-sm font-semibold uppercase tracking-wider text-gray-400">
               {activeTab === "document" ? "Documentation" : activeTab === "business-logic" ? "Business Logic" : "Answer"}
@@ -312,8 +499,8 @@ export default function Home() {
           </div>
         )}
 
-        {/* Sources */}
-        {sources.length > 0 && (
+        {/* Sources (non-query tabs only) */}
+        {activeTab !== "query" && sources.length > 0 && (
           <div className="space-y-4">
             <h2 className="text-sm font-semibold uppercase tracking-wider text-gray-400">
               Sources
