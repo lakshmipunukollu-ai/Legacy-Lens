@@ -33,11 +33,14 @@ app.add_middleware(
 
 conversation_history: dict = defaultdict(list)
 
-# Latency optimization constants
-SNIPPET_MAX_CHARS = 100
+# RAG accuracy constants
+SNIPPET_MAX_CHARS = 400
 CONTEXT_MAX_TOKENS = 2000
-TOP_K = 1
+TOP_K = 5
+TOP_K_BROAD = 8  # for summary/overview queries
 MAX_TOKENS = 300
+
+BROAD_QUERY_KEYWORDS = ("summary", "overview", "summarize", "describe the codebase", "what does this program do", "high level")
 
 # Short system prompts (under 100 words each)
 SYSTEM_PROMPT_QUERY = """COBOL expert. Answer ONLY from provided context. Cite file names and line numbers. If the asked identifier is not in context, say "I couldn't find [identifier] in the indexed codebase. Here is what I found that may be related:" then summarize the closest chunks. If the requested identifier, paragraph, or function does not exist in the retrieved context, respond in exactly 2 sentences maximum: one sentence saying it was not found, and one sentence describing the closest related code you did find. Never write more than 2 sentences for a not-found response."""
@@ -138,10 +141,13 @@ async def query(request: QueryRequest):
     start_time = time.time()
     q_lower = request.question.lower()
     is_entry_point_query = any(kw in q_lower for kw in ENTRY_POINT_KEYWORDS)
-    system_prompt = SYSTEM_PROMPT_QUERY + (ENTRY_POINT_APPEND if is_entry_point_query else "")
+    is_broad_query = any(kw in q_lower for kw in BROAD_QUERY_KEYWORDS)
+    broad_append = " Synthesize a concise summary from the provided chunks. Cite key files and paragraphs." if is_broad_query else ""
+    system_prompt = SYSTEM_PROMPT_QUERY + (ENTRY_POINT_APPEND if is_entry_point_query else "") + broad_append
 
     vectorstore = get_vectorstore()
-    doc_scores = vectorstore.similarity_search_with_score(request.question, k=TOP_K)
+    k = TOP_K_BROAD if is_broad_query else TOP_K
+    doc_scores = vectorstore.similarity_search_with_score(request.question, k=k)
 
     if not doc_scores:
         latency_ms = round((time.time() - start_time) * 1000)
