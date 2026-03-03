@@ -5,7 +5,7 @@
 ## 🚀 Live Demo
 
 - **Frontend:** https://legacy-lens-nine.vercel.app
-- **Backend API:** [your Railway URL here]
+- **Backend API:** https://legacy-lens-production-5e14.up.railway.app
 
 ## Architecture
 
