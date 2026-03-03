@@ -13,7 +13,8 @@
    - `PINECONE_INDEX_NAME` (e.g. `legacylens-vectors`)
    - `PINECONE_INDEX_HOST` (your index host, e.g. `legacylens-vectors-xxxx.svc.aped-4627-b74a.pinecone.io`)
 5. Set **Start Command**: `uvicorn main:app --host 0.0.0.0 --port $PORT`
-6. Deploy. Copy the public URL (e.g. `https://your-app.up.railway.app`).
+6. Deploy.
+7. **Expose the service:** If it says "Unexposed service", click the service → **Settings** → **Networking** → **Generate Domain** (or **Public Networking**). Copy the public URL (e.g. `https://your-app.up.railway.app`).
 
 ### 2. Frontend → Vercel
 
@@ -37,4 +38,7 @@
 | `/dependencies` | POST | PERFORM/call graph (body: `{"question": "MODULE-X"}` or `{}` for all) |
 | `/document` | POST | Generate docs for a paragraph/file (body: `{"paragraph": "NAME"}` or `{"file_name": "x.cob"}`) |
 | `/patterns` | POST | Find file I/O patterns (body: `{"keyword": "OPEN READ WRITE"}`) |
+| `/file` | GET | Full file content (query: `?path=relative/path/to/file.cbl`) |
 | `/health` | GET | Health check |
+
+**Note:** The `/file` endpoint reads from the `codebase/` directory. For Railway deployment, the codebase is not included (gitignored). "View full file" will work when running locally; on production it may return 404 unless you add the codebase to your deployment.

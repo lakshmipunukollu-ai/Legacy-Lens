@@ -1,8 +1,57 @@
-# Legacy Lens
+# LegacyLens
 
-A RAG-powered web app that makes the GnuCOBOL open source codebase queryable via natural language. Ask questions like "What does the CALCULATE-INTEREST paragraph do?" and get accurate answers with file paths and line numbers.
+> RAG-powered natural language search for legacy COBOL codebases
 
-## Tech Stack
+## 🚀 Live Demo
+
+- **Frontend:** https://legacy-lens-nine.vercel.app
+- **Backend API:** [your Railway URL here]
+
+## Architecture
+
+LegacyLens uses a Retrieval-Augmented Generation (RAG) pipeline to make legacy COBOL code queryable via natural language.
+
+### Full Pipeline
+
+```
+User Query
+    ↓
+OpenAI text-embedding-3-small (1024 dims)
+    ↓
+Pinecone Similarity Search (top-5 chunks, cosine)
+    ↓
+Context Assembly (chunks + file/line metadata)
+    ↓
+GPT-4o (COBOL expert system prompt)
+    ↓
+Answer + Source Citations
+```
+
+### Ingestion Pipeline
+
+1. Recursively scan codebase for .cob, .cbl, .cpy files
+2. Normalize encoding to UTF-8, strip non-printable characters
+3. Split by COBOL PARAGRAPH boundaries (regex pattern matching)
+4. Fallback: fixed-size chunks (512 tokens, 50-token overlap)
+5. Attach metadata: file_name, source path, paragraph name, start_line, end_line
+6. Generate embeddings via OpenAI text-embedding-3-small (1024 dims)
+7. Upload to Pinecone with metadata
+
+### Tech Stack
+
+| Layer | Technology |
+|-------|------------|
+| Vector DB | Pinecone (cosine, 1024 dims) |
+| Embeddings | OpenAI text-embedding-3-small |
+| LLM | GPT-4o |
+| Framework | LangChain |
+| Backend | Python + FastAPI |
+| Frontend | Next.js + Tailwind CSS |
+| Deployment | Railway (backend) + Vercel (frontend) |
+
+---
+
+## Tech Stack (summary)
 
 - **Vector DB:** Pinecone (free tier)
 - **Embeddings:** OpenAI text-embedding-3-small
@@ -14,7 +63,13 @@ A RAG-powered web app that makes the GnuCOBOL open source codebase queryable via
 
 ## Setup
 
-The codebase is cloned from `OCamlPro/gnucobol` (GitHub mirror of GnuCOBOL).
+The codebase combines COBOL from `mechanical-orchard/cobol-rekt-rd` and `uwol/proleap-cobol`. Clone both into `codebase/`:
+
+```bash
+mkdir -p codebase
+git clone --depth 1 https://github.com/mechanical-orchard/cobol-rekt-rd.git codebase/cobol-rekt
+git clone --depth 1 https://github.com/uwol/proleap-cobol.git codebase/proleap-cobol
+```
 
 ```bash
 cd backend
@@ -44,9 +99,10 @@ Run these from the **legacylens** folder (or use `legacylens/` in the path):
 
 See **[DEPLOY.md](DEPLOY.md)** for Railway (backend) and Vercel (frontend) steps.
 
-## API — Code Understanding (Phase 7)
+## API — Code Understanding
 
 - `POST /query` — RAG Q&A
 - `POST /dependencies` — PERFORM/call graph
 - `POST /document` — Generate technical docs for a paragraph/file
 - `POST /patterns` — Find file I/O (OPEN, READ, WRITE) patterns
+- `GET /file?path=...` — Full file content for drill-down

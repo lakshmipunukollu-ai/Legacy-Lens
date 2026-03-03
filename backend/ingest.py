@@ -5,6 +5,7 @@ Recursively finds COBOL files, chunks by paragraph boundaries, and uploads to Pi
 
 import os
 import re
+import time
 from pathlib import Path
 
 # Load .env from this script's directory (backend/) so it works regardless of cwd
@@ -175,10 +176,25 @@ def chunk_file(content: str, file_name: str, source_path: str) -> list[Document]
     return docs
 
 
+def delete_all_vectors(index_host: str, api_key: str) -> None:
+    """Delete all vectors from the Pinecone index before re-ingesting."""
+    if not index_host or not api_key:
+        print("Skipping delete (PINECONE_INDEX_HOST or PINECONE_API_KEY not set).")
+        return
+    from pinecone import Pinecone
+    pc = Pinecone(api_key=api_key)
+    index = pc.Index(host=index_host)
+    # LangChain PineconeVectorStore uses empty string namespace by default
+    index.delete(delete_all=True, namespace="")
+    print("Deleted all existing vectors from Pinecone index.")
+
+
 def main():
+    start_time = time.time()
+
     if not CODEBASE_DIR.exists():
         print(f"Error: codebase not found at {CODEBASE_DIR}")
-        print("Run: git clone https://github.com/OCamlPro/gnucobol.git codebase")
+        print("Run: git clone repos into codebase/ (see README)")
         return
 
     files = find_cobol_files(CODEBASE_DIR)
@@ -209,15 +225,22 @@ def main():
 
     index_name = os.getenv("PINECONE_INDEX_NAME", "legacylens")
     index_host = os.getenv("PINECONE_INDEX_HOST", "").strip()
+    api_key = os.environ.get("PINECONE_API_KEY", "").strip()
+
+    # Delete all existing vectors before re-ingesting
+    print("Deleting existing vectors from Pinecone...")
+    try:
+        delete_all_vectors(index_host, api_key)
+    except Exception as e:
+        print(f"Warning: Could not delete existing vectors: {e}")
+        print("Proceeding with upload (may create duplicates).")
 
     # Upload to Pinecone
     print("Uploading to Pinecone...")
     if index_host:
-        # Connect by host to skip list_indexes (avoids 401 if key is data-plane only)
-        from pinecone import Pinecone
-        api_key = os.environ.get("PINECONE_API_KEY", "").strip()
         if not api_key:
             raise ValueError("PINECONE_API_KEY is required when using PINECONE_INDEX_HOST")
+        from pinecone import Pinecone
         pc = Pinecone(api_key=api_key)
         index = pc.Index(host=index_host)
         vectorstore = PineconeVectorStore(index=index, embedding=embeddings)
@@ -228,7 +251,10 @@ def main():
             embeddings,
             index_name=index_name,
         )
-    print("Done! Verify chunks in Pinecone dashboard.")
+
+    elapsed = time.time() - start_time
+    print(f"Done! Uploaded {len(all_docs)} chunks to Pinecone.")
+    print(f"Ingestion took {elapsed:.1f} seconds ({elapsed/60:.1f} minutes).")
 
 
 if __name__ == "__main__":

@@ -5,6 +5,7 @@ FastAPI server with RAG endpoint for COBOL codebase queries.
 
 import json
 import os
+import time
 from pathlib import Path
 from dotenv import load_dotenv
 load_dotenv(Path(__file__).resolve().parent / ".env")
@@ -39,11 +40,14 @@ class SourceItem(BaseModel):
     start_line: int
     end_line: int
     snippet: str
+    score: float  # 0-100 relevance percentage
+    source: str = ""  # full path for /file drill-down
 
 
 class QueryResponse(BaseModel):
     answer: str
     sources: list[SourceItem]
+    latency_ms: int
 
 
 def get_vectorstore():
@@ -67,18 +71,30 @@ Answer based ONLY on the provided code context.
 Always cite file names and line numbers when referencing code."""
 
 
+def _distance_to_score(distance: float) -> float:
+    """Convert cosine distance to 0-100 similarity percentage."""
+    score_pct = round((1 - distance) * 100, 1)
+    return max(0.0, min(100.0, score_pct))
+
+
 @app.post("/query", response_model=QueryResponse)
 async def query(request: QueryRequest):
+    start_time = time.time()
     vectorstore = get_vectorstore()
 
-    # Retrieve top-5 matching chunks
-    docs = vectorstore.similarity_search(request.question, k=5)
+    # Retrieve top-5 matching chunks with scores
+    doc_scores = vectorstore.similarity_search_with_score(request.question, k=5)
 
-    if not docs:
+    if not doc_scores:
+        latency_ms = round((time.time() - start_time) * 1000)
         return QueryResponse(
             answer="No relevant code found for your question. Try rephrasing or asking about a specific file or paragraph.",
             sources=[],
+            latency_ms=latency_ms,
         )
+
+    docs = [d for d, _ in doc_scores]
+    scores = [_distance_to_score(s) for _, s in doc_scores]
 
     context = "\n\n---\n\n".join(
         f"File: {d.metadata.get('file_name', 'unknown')}\n"
@@ -104,16 +120,54 @@ async def query(request: QueryRequest):
             start_line=d.metadata.get("start_line", 0),
             end_line=d.metadata.get("end_line", 0),
             snippet=d.page_content[:500] + ("..." if len(d.page_content) > 500 else ""),
+            score=scores[i],
+            source=d.metadata.get("source", ""),
         )
-        for d in docs
+        for i, d in enumerate(docs)
     ]
 
-    return QueryResponse(answer=answer, sources=sources)
+    latency_ms = round((time.time() - start_time) * 1000)
+    return QueryResponse(answer=answer, sources=sources, latency_ms=latency_ms)
 
 
 @app.get("/health")
 async def health():
     return {"status": "ok"}
+
+
+# --- Full file drill-down ---
+CODEBASE_DIR = Path(__file__).resolve().parent.parent / "codebase"
+
+
+@app.get("/file")
+async def get_file(path: str = ""):
+    """Return full file content for drill-down. path is relative to codebase/."""
+    if not path or ".." in path or path.startswith("/"):
+        from fastapi.responses import JSONResponse
+        return JSONResponse(
+            status_code=400,
+            content={"detail": "Invalid path. Use relative path within codebase."},
+        )
+    full_path = (CODEBASE_DIR / path).resolve()
+    if not str(full_path).startswith(str(CODEBASE_DIR.resolve())):
+        from fastapi.responses import JSONResponse
+        return JSONResponse(status_code=403, content={"detail": "Path traversal not allowed."})
+    if not full_path.exists() or not full_path.is_file():
+        from fastapi.responses import JSONResponse
+        return JSONResponse(
+            status_code=404,
+            content={"detail": f"File not found: {path}"},
+        )
+    try:
+        content = full_path.read_text(encoding="utf-8", errors="replace")
+        line_count = len(content.splitlines())
+        return {"path": path, "content": content, "line_count": line_count}
+    except Exception as e:
+        from fastapi.responses import JSONResponse
+        return JSONResponse(
+            status_code=500,
+            content={"detail": f"Could not read file: {e}"},
+        )
 
 
 # --- Phase 7: Code Understanding Features ---
@@ -122,18 +176,24 @@ class DependenciesResponse(BaseModel):
     answer: str
     call_graph: list[dict]  # [{ "caller": "PARA-A", "callee": "PARA-B", "file": "...", "line": N }]
     sources: list[SourceItem]
+    latency_ms: int
 
 
 @app.post("/dependencies", response_model=DependenciesResponse)
 async def dependencies(request: QueryRequest):
     """Retrieve chunks containing PERFORM statements and return a call-graph style summary."""
+    start_time = time.time()
     vectorstore = get_vectorstore()
-    docs = vectorstore.similarity_search(
+    doc_scores = vectorstore.similarity_search_with_score(
         "PERFORM statement calling paragraph or section " + (request.question or "dependencies"),
         k=10,
     )
-    if not docs:
-        return DependenciesResponse(answer="No PERFORM/call patterns found.", call_graph=[], sources=[])
+    if not doc_scores:
+        latency_ms = round((time.time() - start_time) * 1000)
+        return DependenciesResponse(answer="No PERFORM/call patterns found.", call_graph=[], sources=[], latency_ms=latency_ms)
+
+    docs = [d for d, _ in doc_scores]
+    scores = [_distance_to_score(s) for _, s in doc_scores]
 
     context = "\n\n---\n\n".join(
         f"File: {d.metadata.get('file_name', '')} Lines {d.metadata.get('start_line', '')}-{d.metadata.get('end_line', '')}\n{d.page_content}"
@@ -163,10 +223,13 @@ async def dependencies(request: QueryRequest):
             start_line=d.metadata.get("start_line", 0),
             end_line=d.metadata.get("end_line", 0),
             snippet=d.page_content[:500] + ("..." if len(d.page_content) > 500 else ""),
+            score=scores[i],
+            source=d.metadata.get("source", ""),
         )
-        for d in docs
+        for i, d in enumerate(docs)
     ]
-    return DependenciesResponse(answer=answer, call_graph=call_graph, sources=sources)
+    latency_ms = round((time.time() - start_time) * 1000)
+    return DependenciesResponse(answer=answer, call_graph=call_graph, sources=sources, latency_ms=latency_ms)
 
 
 class DocumentRequest(BaseModel):
@@ -177,19 +240,25 @@ class DocumentRequest(BaseModel):
 class DocumentResponse(BaseModel):
     documentation: str
     sources: list[SourceItem]
+    latency_ms: int
 
 
 @app.post("/document", response_model=DocumentResponse)
 async def generate_documentation(body: DocumentRequest):
     """Retrieve paragraph or file code and generate technical documentation."""
+    start_time = time.time()
     vectorstore = get_vectorstore()
     query = body.paragraph or body.file_name or "main program entry procedure division"
-    docs = vectorstore.similarity_search(query, k=5)
-    if not docs:
+    doc_scores = vectorstore.similarity_search_with_score(query, k=5)
+    if not doc_scores:
+        latency_ms = round((time.time() - start_time) * 1000)
         return DocumentResponse(
             documentation="No matching code found to document.",
             sources=[],
+            latency_ms=latency_ms,
         )
+    docs = [d for d, _ in doc_scores]
+    scores = [_distance_to_score(s) for _, s in doc_scores]
     context = "\n\n---\n\n".join(
         f"File: {d.metadata.get('file_name', '')} Paragraph: {d.metadata.get('paragraph', '')} Lines {d.metadata.get('start_line', '')}-{d.metadata.get('end_line', '')}\n{d.page_content}"
         for d in docs
@@ -208,10 +277,13 @@ async def generate_documentation(body: DocumentRequest):
             start_line=d.metadata.get("start_line", 0),
             end_line=d.metadata.get("end_line", 0),
             snippet=d.page_content[:500] + ("..." if len(d.page_content) > 500 else ""),
+            score=scores[i],
+            source=d.metadata.get("source", ""),
         )
-        for d in docs
+        for i, d in enumerate(docs)
     ]
-    return DocumentResponse(documentation=documentation, sources=sources)
+    latency_ms = round((time.time() - start_time) * 1000)
+    return DocumentResponse(documentation=documentation, sources=sources, latency_ms=latency_ms)
 
 
 class PatternRequest(BaseModel):
@@ -221,21 +293,27 @@ class PatternRequest(BaseModel):
 class PatternResponse(BaseModel):
     answer: str
     sources: list[SourceItem]
+    latency_ms: int
 
 
 @app.post("/patterns", response_model=PatternResponse)
 async def pattern_detection(body: PatternRequest):
     """Search for keywords (e.g. OPEN, READ, WRITE) to find file I/O or other patterns."""
+    start_time = time.time()
     vectorstore = get_vectorstore()
-    docs = vectorstore.similarity_search(
+    doc_scores = vectorstore.similarity_search_with_score(
         f"COBOL code containing {body.keyword} file operations or similar",
         k=10,
     )
-    if not docs:
+    if not doc_scores:
+        latency_ms = round((time.time() - start_time) * 1000)
         return PatternResponse(
             answer=f"No chunks found matching pattern: {body.keyword}",
             sources=[],
+            latency_ms=latency_ms,
         )
+    docs = [d for d, _ in doc_scores]
+    scores = [_distance_to_score(s) for _, s in doc_scores]
     sources = [
         SourceItem(
             file=d.metadata.get("file_name", "unknown"),
@@ -243,8 +321,11 @@ async def pattern_detection(body: PatternRequest):
             start_line=d.metadata.get("start_line", 0),
             end_line=d.metadata.get("end_line", 0),
             snippet=d.page_content[:500] + ("..." if len(d.page_content) > 500 else ""),
+            score=scores[i],
+            source=d.metadata.get("source", ""),
         )
-        for d in docs
+        for i, d in enumerate(docs)
     ]
     answer = f"Found {len(docs)} chunk(s) matching pattern '{body.keyword}' (file I/O and related operations)."
-    return PatternResponse(answer=answer, sources=sources)
+    latency_ms = round((time.time() - start_time) * 1000)
+    return PatternResponse(answer=answer, sources=sources, latency_ms=latency_ms)
