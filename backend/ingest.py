@@ -3,6 +3,7 @@ LegacyLens Ingestion Pipeline
 Recursively finds COBOL files, chunks by paragraph boundaries, and uploads to Pinecone.
 """
 
+import argparse
 import os
 import re
 import time
@@ -190,6 +191,10 @@ def delete_all_vectors(index_host: str, api_key: str) -> None:
 
 
 def main():
+    parser = argparse.ArgumentParser(description="LegacyLens ingestion pipeline")
+    parser.add_argument("--dry-run", action="store_true", help="Only discover files and chunk; do not upload to Pinecone")
+    args = parser.parse_args()
+
     start_time = time.time()
 
     if not CODEBASE_DIR.exists():
@@ -198,10 +203,15 @@ def main():
         return
 
     files = find_cobol_files(CODEBASE_DIR)
+    print("=" * 48)
+    print("LegacyLens Ingestion Pipeline")
+    print("=" * 48)
     print(f"Found {len(files)} COBOL files")
+    print()
 
     all_docs = []
-    for path in files:
+    total_files = len(files)
+    for i, path in enumerate(files, start=1):
         try:
             content = read_file_utf8(path)
             rel_path = path.relative_to(CODEBASE_DIR)
@@ -209,13 +219,29 @@ def main():
             file_name = path.name
             docs = chunk_file(content, file_name, source_path)
             all_docs.extend(docs)
+            print(f"[{i}/{total_files}] {file_name} → {len(docs)} chunks")
         except Exception as e:
             print(f"  Skip {path}: {e}")
 
-    print(f"Total chunks: {len(all_docs)}")
+    print(f"Total chunks created: {len(all_docs)}")
 
     if not all_docs:
         print("No documents to upload.")
+        return
+
+    if args.dry_run:
+        elapsed = time.time() - start_time
+        minutes = elapsed / 60
+        print()
+        print("Uploading to Pinecone in batches of 100...")
+        print("(Dry run — skipping Pinecone upload)")
+        print()
+        print("=" * 48)
+        print("Ingestion Complete (dry run)")
+        print(f"Files processed: {len(files)}")
+        print(f"Total chunks: {len(all_docs)}")
+        print(f"Time elapsed: {minutes:.1f} minutes")
+        print("=" * 48)
         return
 
     embeddings = OpenAIEmbeddings(
@@ -236,7 +262,9 @@ def main():
         print("Proceeding with upload (may create duplicates).")
 
     # Upload to Pinecone
-    print("Uploading to Pinecone...")
+    print("Uploading to Pinecone in batches of 100...")
+    batch_size = 100
+    total_chunks = len(all_docs)
     if index_host:
         if not api_key:
             raise ValueError("PINECONE_API_KEY is required when using PINECONE_INDEX_HOST")
@@ -244,17 +272,29 @@ def main():
         pc = Pinecone(api_key=api_key)
         index = pc.Index(host=index_host)
         vectorstore = PineconeVectorStore(index=index, embedding=embeddings)
-        vectorstore.add_documents(all_docs)
+        for i in range(0, total_chunks, batch_size):
+            batch = all_docs[i : i + batch_size]
+            vectorstore.add_documents(batch)
+            uploaded = min(i + batch_size, total_chunks)
+            if uploaded % 500 == 0 or uploaded == total_chunks:
+                print(f"Uploaded {uploaded}/{total_chunks} chunks...")
     else:
-        PineconeVectorStore.from_documents(
+        vectorstore = PineconeVectorStore.from_documents(
             all_docs,
             embeddings,
             index_name=index_name,
         )
+        print(f"Uploaded {total_chunks}/{total_chunks} chunks...")
 
     elapsed = time.time() - start_time
-    print(f"Done! Uploaded {len(all_docs)} chunks to Pinecone.")
-    print(f"Ingestion took {elapsed:.1f} seconds ({elapsed/60:.1f} minutes).")
+    minutes = elapsed / 60
+    print()
+    print("=" * 48)
+    print("Ingestion Complete")
+    print(f"Files processed: {len(files)}")
+    print(f"Total chunks: {len(all_docs)}")
+    print(f"Time elapsed: {minutes:.1f} minutes")
+    print("=" * 48)
 
 
 if __name__ == "__main__":
