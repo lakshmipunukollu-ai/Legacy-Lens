@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import SyntaxHighlighter from "react-syntax-highlighter";
 import { vscDarkPlus } from "react-syntax-highlighter/dist/esm/styles/prism";
 
@@ -69,6 +69,14 @@ type ChatMessage = {
   latencyMs?: number;
 };
 
+type FileTreeNode = {
+  name: string;
+  type: "directory" | "file";
+  path?: string;
+  lines?: number;
+  children?: FileTreeNode[];
+};
+
 export default function Home() {
   const [activeTab, setActiveTab] = useState<TabId>("query");
   const [sessionId] = useState(() => Math.random().toString(36).substring(2, 15));
@@ -87,8 +95,60 @@ export default function Home() {
   const [expandedSourceIdx, setExpandedSourceIdx] = useState<number | null>(null);
   const [expandedSourcesForMessage, setExpandedSourcesForMessage] = useState<number | null>(null);
   const [expandedChatSource, setExpandedChatSource] = useState<{ messageIdx: number; sourceIdx: number } | null>(null);
+  const [fileTree, setFileTree] = useState<{ tree: FileTreeNode[]; total_files: number; error?: string } | null>(null);
+  const [fileSearch, setFileSearch] = useState("");
+  const [expandedDirs, setExpandedDirs] = useState<Set<string>>(new Set());
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [fileModal, setFileModal] = useState<{ path: string; content: string; line_count: number } | null>(null);
+  const [selectedFilePath, setSelectedFilePath] = useState<string | null>(null);
 
   const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+
+  useEffect(() => {
+    fetch(`${apiUrl}/files`)
+      .then((r) => r.json())
+      .then((d) => setFileTree(d))
+      .catch(() => setFileTree({ tree: [], total_files: 0, error: "Failed to load" }));
+  }, [apiUrl]);
+
+  const filterTree = (nodes: FileTreeNode[], search: string): FileTreeNode[] => {
+    if (!search.trim()) return nodes;
+    const q = search.toLowerCase();
+    return nodes
+      .map((n) => {
+        if (n.type === "file") {
+          return n.name.toLowerCase().includes(q) ? n : null;
+        }
+        const filtered = filterTree(n.children || [], search);
+        return filtered.length > 0 ? { ...n, children: filtered } : null;
+      })
+      .filter((n): n is FileTreeNode => n !== null);
+  };
+
+  const toggleDir = (path: string) => {
+    setExpandedDirs((prev) => {
+      const next = new Set(prev);
+      if (next.has(path)) next.delete(path);
+      else next.add(path);
+      return next;
+    });
+  };
+
+  const handleFileClick = async (path: string) => {
+    setSelectedFilePath(path);
+    setSidebarOpen(false);
+    try {
+      const res = await fetch(`${apiUrl}/file?path=${encodeURIComponent(path)}`);
+      const data = await res.json();
+      if (data.error || !data.content) {
+        setError("File not available. Codebase may not be deployed in production.");
+        return;
+      }
+      setFileModal({ path: data.path, content: data.content, line_count: data.line_count });
+    } catch {
+      setError("Failed to load file.");
+    }
+  };
 
   const getInput = () => {
     if (activeTab === "query") return queryInput;
@@ -255,10 +315,98 @@ export default function Home() {
     return "Search";
   };
 
+  const renderFileTree = (nodes: FileTreeNode[], parentPath: string = "") =>
+    nodes.map((n) => {
+      const fullPath = parentPath ? `${parentPath}/${n.name}` : n.name;
+      if (n.type === "directory") {
+        const isExpanded = expandedDirs.has(fullPath);
+        return (
+          <div key={fullPath} className="select-none">
+            <button
+              onClick={() => toggleDir(fullPath)}
+              className="flex w-full items-center gap-1 px-2 py-1 text-left text-sm text-gray-300 hover:bg-gray-800"
+            >
+              <span className="w-4 text-gray-500">{isExpanded ? "▼" : "▶"}</span>
+              {n.name}
+            </button>
+            {isExpanded && (
+              <div className="ml-4 border-l border-gray-700 pl-1">
+                {renderFileTree(n.children || [], fullPath)}
+              </div>
+            )}
+          </div>
+        );
+      }
+      return (
+        <button
+          key={n.path || fullPath}
+          onClick={() => handleFileClick(n.path || fullPath)}
+          className={`flex w-full items-center justify-between gap-2 px-2 py-1 text-left text-sm hover:bg-gray-800 ${
+            selectedFilePath === (n.path || fullPath) ? "bg-blue-900/50 text-blue-300" : "text-gray-300"
+          }`}
+        >
+          <span className="truncate">{n.name}</span>
+          {n.lines != null && <span className="shrink-0 text-xs text-gray-500">{n.lines}</span>}
+        </button>
+      );
+    });
+
   return (
-    <div className="min-h-screen bg-gray-950 text-gray-100">
-      <div className="mx-auto max-w-3xl px-6 py-16">
-        <h1 className="mb-2 text-3xl font-bold tracking-tight">Legacy Lens</h1>
+    <div className="flex min-h-screen bg-gray-950 text-gray-100">
+      {/* Mobile hamburger */}
+      <button
+        onClick={() => setSidebarOpen((o) => !o)}
+        className="fixed left-4 top-4 z-50 rounded border border-gray-600 bg-gray-900 p-2 text-xl md:hidden"
+      >
+        📁
+      </button>
+
+      {/* Sidebar backdrop (mobile) */}
+      {sidebarOpen && (
+        <div
+          className="fixed inset-0 z-30 bg-black/50 md:hidden"
+          onClick={() => setSidebarOpen(false)}
+        />
+      )}
+
+      {/* Sidebar */}
+      <aside
+        className={`fixed inset-y-0 left-0 z-40 w-[260px] flex-shrink-0 overflow-y-auto border-r border-gray-700 bg-gray-900 transition-transform md:relative md:translate-x-0 ${
+          sidebarOpen ? "translate-x-0" : "-translate-x-full"
+        }`}
+      >
+        <div className="p-4 pt-14 md:pt-4">
+          <div className="mb-3 flex items-center gap-2">
+            <h2 className="font-semibold text-gray-200">📁 Files</h2>
+            {fileTree && !fileTree.error && (
+              <span className="rounded bg-gray-700 px-2 py-0.5 text-xs text-gray-400">
+                {fileTree.total_files}
+              </span>
+            )}
+          </div>
+          {fileTree?.error || (fileTree && fileTree.tree.length === 0) ? (
+            <p className="text-sm text-gray-500">File tree not available in production</p>
+          ) : (
+            <>
+              <input
+                type="text"
+                value={fileSearch}
+                onChange={(e) => setFileSearch(e.target.value)}
+                placeholder="Search files..."
+                className="mb-3 w-full rounded border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-gray-200 placeholder-gray-500 focus:border-emerald-500 focus:outline-none"
+              />
+              <div className="space-y-0.5">
+                {fileTree && renderFileTree(filterTree(fileTree.tree, fileSearch))}
+              </div>
+            </>
+          )}
+        </div>
+      </aside>
+
+      {/* Main content */}
+      <main className="flex-1 overflow-auto">
+        <div className="mx-auto max-w-3xl px-6 py-16">
+          <h1 className="mb-2 text-3xl font-bold tracking-tight">Legacy Lens</h1>
         <p className="mb-10 text-gray-400">
           Query the COBOL codebase in natural language
         </p>
@@ -436,7 +584,7 @@ export default function Home() {
               disabled={loading}
             />
             <button
-              onClick={handleSubmit}
+              onClick={() => handleSubmit()}
               disabled={loading || !canSubmit()}
               className="rounded-lg bg-emerald-600 px-6 py-3 font-medium text-white transition hover:bg-emerald-500 disabled:cursor-not-allowed disabled:opacity-50"
             >
@@ -571,7 +719,38 @@ export default function Home() {
             ))}
           </div>
         )}
-      </div>
+        </div>
+      </main>
+
+      {/* File modal */}
+      {fileModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
+          <div className="flex max-h-[90vh] w-full max-w-4xl flex-col rounded-lg border border-gray-700 bg-gray-900 shadow-xl">
+            <div className="flex items-center justify-between border-b border-gray-700 px-4 py-3">
+              <h3 className="truncate font-medium text-gray-200">
+                {fileModal.path} ({fileModal.line_count} lines)
+              </h3>
+              <button
+                onClick={() => setFileModal(null)}
+                className="rounded p-1 text-gray-400 hover:bg-gray-800 hover:text-white"
+              >
+                ✕
+              </button>
+            </div>
+            <div className="overflow-auto p-4">
+              <SyntaxHighlighter
+                language="cobol"
+                style={vscDarkPlus}
+                customStyle={{ borderRadius: "8px", fontSize: "13px" }}
+                PreTag="div"
+                showLineNumbers
+              >
+                {fileModal.content}
+              </SyntaxHighlighter>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

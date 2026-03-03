@@ -229,6 +229,62 @@ async def stats():
 
 # --- Full file drill-down ---
 CODEBASE_DIR = Path(__file__).resolve().parent.parent / "codebase"
+COBOL_EXTENSIONS = {".cob", ".cbl", ".cpy", ".COB", ".CBL", ".CPY"}
+
+
+def _build_file_tree(root: Path, base: Path) -> list:
+    """Build nested tree of directories and COBOL files only. Sorted alphabetically."""
+    items = []
+    try:
+        entries = sorted(root.iterdir(), key=lambda p: (not p.is_dir(), p.name.lower()))
+    except OSError:
+        return items
+    for item in entries:
+        if item.name.startswith("."):
+            continue
+        rel = item.relative_to(base)
+        rel_str = str(rel).replace("\\", "/")
+        if item.is_dir():
+            children = _build_file_tree(item, base)
+            if children:
+                items.append({
+                    "name": item.name,
+                    "type": "directory",
+                    "children": children,
+                })
+        elif item.is_file() and item.suffix in COBOL_EXTENSIONS:
+            try:
+                lines = len(item.read_text(encoding="utf-8", errors="replace").splitlines())
+            except Exception:
+                lines = 0
+            items.append({
+                "name": item.name,
+                "type": "file",
+                "path": rel_str,
+                "lines": lines,
+            })
+    return items
+
+
+@app.get("/files")
+async def list_files():
+    """Return nested file tree of COBOL files in codebase/. Grouped by top-level directory."""
+    if not CODEBASE_DIR.exists() or not CODEBASE_DIR.is_dir():
+        return {"tree": [], "total_files": 0, "error": "Codebase not available in production"}
+
+    tree = _build_file_tree(CODEBASE_DIR, CODEBASE_DIR)
+
+    def count_files(items: list) -> int:
+        n = 0
+        for x in items:
+            if x.get("type") == "file":
+                n += 1
+            else:
+                n += count_files(x.get("children", []))
+        return n
+
+    total_files = count_files(tree)
+    return {"tree": tree, "total_files": total_files}
 
 
 @app.get("/file")
