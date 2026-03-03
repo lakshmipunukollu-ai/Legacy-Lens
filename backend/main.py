@@ -202,10 +202,12 @@ class ClearHistoryRequest(BaseModel):
 
 
 @app.post("/clear-history")
-async def clear_history(body: ClearHistoryRequest):
-    """Clear conversation history for a session."""
-    conversation_history[body.session_id] = []
-    return {"status": "cleared", "session_id": body.session_id}
+async def clear_history(request: ClearHistoryRequest):
+    """Clear conversation history for a session. No LLM or Pinecone calls."""
+    start_time = time.time()
+    conversation_history[request.session_id] = []
+    latency_ms = round((time.time() - start_time) * 1000)
+    return {"status": "cleared", "session_id": request.session_id, "latency_ms": latency_ms}
 
 
 @app.get("/health")
@@ -346,7 +348,7 @@ async def dependencies(request: QueryRequest):
         ("system", SYSTEM_PROMPT_DEPS),
         ("human", "Code:\n{context}\n\nQuestion or module: {question}\n\nJSON array of call graph items:"),
     ])
-    llm = ChatOpenAI(model="gpt-4o-mini", temperature=0, max_tokens=MAX_TOKENS)
+    llm = ChatOpenAI(model="gpt-4o-mini", temperature=0, max_tokens=150)
     chain = prompt | llm | StrOutputParser()
     raw = chain.invoke({"context": context, "question": request.question or "all PERFORM calls"})
     # Parse JSON from response (may be wrapped in markdown)
@@ -408,7 +410,7 @@ async def generate_documentation(body: DocumentRequest):
         ("system", SYSTEM_PROMPT_DOC),
         ("human", "Code:\n{context}\n\nWrite technical documentation:"),
     ])
-    llm = ChatOpenAI(model="gpt-4o-mini", temperature=0, max_tokens=200)
+    llm = ChatOpenAI(model="gpt-4o-mini", temperature=0, max_tokens=150)
     chain = prompt | llm | StrOutputParser()
     documentation = chain.invoke({"context": context})
     sources = [
@@ -503,7 +505,7 @@ async def business_logic(request: QueryRequest):
         ("system", SYSTEM_PROMPT_BUSINESS_LOGIC),
         ("human", "COBOL code:\n{context}\n\nExtract business rules:"),
     ])
-    llm = ChatOpenAI(model="gpt-4o-mini", temperature=0, max_tokens=200)
+    llm = ChatOpenAI(model="gpt-4o-mini", temperature=0, max_tokens=150)
     chain = prompt | llm | StrOutputParser()
     business_logic_text = chain.invoke({"context": context})
 
