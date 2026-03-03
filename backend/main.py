@@ -31,10 +31,10 @@ app.add_middleware(
 )
 
 # Latency optimization constants
-SNIPPET_MAX_CHARS = 150
-CONTEXT_MAX_TOKENS = 3000
+SNIPPET_MAX_CHARS = 100
+CONTEXT_MAX_TOKENS = 2000
 TOP_K = 2
-MAX_TOKENS = 400
+MAX_TOKENS = 300
 
 # Short system prompts (under 100 words each)
 SYSTEM_PROMPT_QUERY = """COBOL expert. Answer ONLY from provided context. Cite file names and line numbers. If the asked identifier is not in context, say "I couldn't find [identifier] in the indexed codebase. Here is what I found that may be related:" then summarize the closest chunks."""
