@@ -133,7 +133,8 @@ def _distance_to_score(distance: float) -> float:
 
 
 ENTRY_POINT_KEYWORDS = ("main entry", "entry point", "start", "begin", "program start")
-ENTRY_POINT_APPEND = " Focus your answer on IDENTIFICATION DIVISION, PROGRAM-ID, and PROCEDURE DIVISION entries. Keep your answer under 3 sentences."
+ENTRY_POINT_APPEND = """ Entry point means where execution STARTS (PROGRAM-ID in IDENTIFICATION DIVISION, or first paragraph of PROCEDURE DIVISION). STOP RUN is an EXIT point (where execution ends)—never treat it as an entry point. Answer only from chunks that show PROGRAM-ID, IDENTIFICATION DIVISION, or PROCEDURE DIVISION. Keep your answer under 3 sentences."""
+ENTRY_POINT_SEARCH_BOOST = " PROGRAM-ID IDENTIFICATION DIVISION PROCEDURE DIVISION"
 
 
 @app.post("/query", response_model=QueryResponse)
@@ -147,7 +148,8 @@ async def query(request: QueryRequest):
 
     vectorstore = get_vectorstore()
     k = TOP_K_BROAD if is_broad_query else TOP_K
-    doc_scores = vectorstore.similarity_search_with_score(request.question, k=k)
+    search_query = (request.question + ENTRY_POINT_SEARCH_BOOST) if is_entry_point_query else request.question
+    doc_scores = vectorstore.similarity_search_with_score(search_query, k=k)
 
     if not doc_scores:
         latency_ms = round((time.time() - start_time) * 1000)
