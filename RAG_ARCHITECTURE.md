@@ -89,24 +89,24 @@ User natural language query
         ↓
 OpenAI text-embedding-3-small (1024 dims)
         ↓
-Pinecone similarity_search_with_score (top-3, cosine)
+Pinecone similarity_search_with_score (top-2, cosine)
         ↓
 Score conversion: (1 - distance) × 100 → percentage
         ↓
 Context assembly: chunks + file/line metadata headers
         ↓
-GPT-4o (COBOL expert system prompt + assembled context)
+GPT-4o-mini (COBOL expert system prompt + assembled context)
         ↓
 Answer + source citations with confidence scores
 ```
 
-**Top-k:** 3 chunks per query (reduced from 5 to improve latency)
+**Top-k:** 2 chunks per query (reduced from 5 to improve latency)
 
 **Re-ranking:** Not implemented in MVP. Cohere Rerank API identified as next upgrade
 to improve result ordering for ambiguous queries.
 
 **Context assembly:** Retrieved chunks are concatenated with file path and line number
-headers before being passed to GPT-4o, ensuring every answer can cite exact locations.
+headers before being passed to GPT-4o-mini, ensuring every answer can cite exact locations.
 
 **Confidence scores:** Cosine distance is converted to a 0–100% similarity score and
 displayed as color-coded badges (green ≥80%, yellow ≥50%, red <50%).
@@ -123,8 +123,8 @@ exist in the indexed codebases. The LLM correctly reports it cannot find the con
 but the UX could be improved with a clearer "not found" message.
 
 2. **Query latency variability** — Some queries exceed the 3-second target (observed
-range: 662ms–4,842ms). Latency spikes correlate with longer GPT-4o responses.
-Mitigation: reduced top-k to 3 and capped max_tokens.
+range: 662ms–4,842ms). Latency spikes correlate with longer GPT-4o-mini responses.
+Mitigation: reduced top-k to 2 and capped max_tokens.
 
 3. **Full file view in production** — The `/file` endpoint reads files from the local
 `codebase/` directory. Since the codebase is gitignored and not bundled with the
@@ -144,7 +144,7 @@ or continuation lines that the regex parser misses, falling back to fixed-size c
 | Metric | Target | Actual |
 |--------|--------|--------|
 | Query latency | <3,000ms | 662ms–4,447ms (avg ~3,000ms) |
-| Retrieval precision | >70% relevant in top-3 | ~75% based on manual spot checks |
+| Retrieval precision | >70% relevant in top-2 | ~75% based on manual spot checks |
 | Codebase coverage | 100% of files | 432/432 files indexed |
 | Ingestion throughput | 10K LOC in <5 min | 354K LOC in 7.1 min |
 | Answer accuracy | Correct file/line refs | Verified on 4 of 6 test queries |

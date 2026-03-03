@@ -22,11 +22,11 @@ User Query
     ↓
 OpenAI text-embedding-3-small (1024 dims)
     ↓
-Pinecone Similarity Search (top-3 chunks, cosine)
+Pinecone Similarity Search (top-2 chunks, cosine)
     ↓
 Context Assembly (chunks + file/line metadata)
     ↓
-GPT-4o (COBOL expert system prompt)
+GPT-4o-mini (COBOL expert system prompt)
     ↓
 Answer + Source Citations
 ```
@@ -47,7 +47,7 @@ Answer + Source Citations
 |-------|------------|
 | Vector DB | Pinecone (cosine, 1024 dims) |
 | Embeddings | OpenAI text-embedding-3-small |
-| LLM | GPT-4o |
+| LLM | GPT-4o-mini |
 | Framework | LangChain |
 | Backend | Python + FastAPI |
 | Frontend | Next.js + Tailwind CSS |
@@ -59,7 +59,7 @@ Answer + Source Citations
 
 - **Vector DB:** Pinecone (free tier)
 - **Embeddings:** OpenAI text-embedding-3-small
-- **LLM:** GPT-4o
+- **LLM:** GPT-4o-mini
 - **Framework:** LangChain (Python)
 - **Backend:** Python + FastAPI
 - **Frontend:** React + Next.js
