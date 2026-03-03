@@ -33,7 +33,7 @@ app.add_middleware(
 # Latency optimization constants
 SNIPPET_MAX_CHARS = 100
 CONTEXT_MAX_TOKENS = 2000
-TOP_K = 2
+TOP_K = 1
 MAX_TOKENS = 300
 
 # Short system prompts (under 100 words each)
