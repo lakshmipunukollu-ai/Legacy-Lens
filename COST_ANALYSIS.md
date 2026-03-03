@@ -15,13 +15,13 @@
 - **Total embedding cost:** ~$0.33 (5.5M tokens × 3 runs × $0.02/1M)
 
 ### LLM API Costs (Answer Generation)
-- **Model:** GPT-4o at $5.00/1M input tokens, $15.00/1M output tokens
+- **Model:** GPT-4o-mini at $0.15/1M input tokens, $0.60/1M output tokens
 - **Estimated development queries:** ~200 test queries
 - **Average tokens per query:** ~2,000 input (context + question), ~300 output
-- **Total LLM cost:** ~$2.09
-  - Input: 200 × 2,000 = 400K tokens × $5/1M = $2.00
-  - Output: 200 × 300 = 60K tokens × $15/1M = $0.90
-  - Subtotal: ~$2.09
+- **Total LLM cost:** ~$0.10
+  - Input: 200 × 2,000 = 400K tokens × $0.15/1M = $0.06
+  - Output: 200 × 300 = 60K tokens × $0.60/1M = $0.04
+  - Subtotal: ~$0.10
 
 ### Vector Database
 - **Pinecone Starter tier:** $0.00 (free)
@@ -35,11 +35,11 @@
 | Category | Cost |
 |----------|------|
 | Embeddings (3 ingestion runs) | ~$0.33 |
-| GPT-4o (200 test queries) | ~$2.09 |
+| GPT-4o-mini (200 test queries) | ~$0.10 |
 | Pinecone | $0.00 |
 | Railway | $0.00 |
 | Vercel | $0.00 |
-| **Total** | **~$2.42** |
+| **Total** | **~$0.43** |
 
 ---
 
@@ -47,7 +47,7 @@
 
 ### Assumptions
 - Each user sends **5 queries per day**
-- Each query: ~2,000 input tokens, ~300 output tokens (GPT-4o)
+- Each query: ~2,000 input tokens, ~300 output tokens (GPT-4o-mini)
 - Embedding queries: ~100 tokens each (OpenAI text-embedding-3-small)
 - Codebase re-ingestion: once per month (~5.5M tokens)
 - 30 days per month
@@ -56,36 +56,33 @@
 | Component | Cost per query |
 |-----------|----------------|
 | Query embedding (100 tokens) | $0.000002 |
-| GPT-4o input (2,000 tokens) | $0.010000 |
-| GPT-4o output (300 tokens) | $0.004500 |
-| **Total per query** | **~$0.0145** |
+| GPT-4o-mini input (2,000 tokens) | $0.000300 |
+| GPT-4o-mini output (300 tokens) | $0.000180 |
+| **Total per query** | **~$0.000482** |
 
 ### Monthly Cost by Scale
 
 | Scale | Queries/month | LLM Cost | Embedding Cost | Pinecone | Total/month |
 |-------|---------------|----------|----------------|----------|-------------|
-| **100 users** | 15,000 | $217.50 | $0.30 | $0 (free) | **~$218** |
-| **1,000 users** | 150,000 | $2,175 | $3.00 | $70 (Starter) | **~$2,248** |
-| **10,000 users** | 1,500,000 | $21,750 | $30.00 | $700 (Standard) | **~$22,480** |
-| **100,000 users** | 15,000,000 | $217,500 | $300.00 | $4,000 (Enterprise) | **~$221,800** |
+| **100 users** | 15,000 | $7.23 | $0.30 | $0 (free) | **~$8** |
+| **1,000 users** | 150,000 | $72.30 | $3.00 | $70 (Starter) | **~$145** |
+| **10,000 users** | 1,500,000 | $723 | $30.00 | $700 (Standard) | **~$1,453** |
+| **100,000 users** | 15,000,000 | $7,230 | $300.00 | $4,000 (Enterprise) | **~$11,530** |
 
 ### Key Cost Observations
 
-**GPT-4o dominates costs at every scale** — it accounts for 97%+ of total spend.
-The primary cost optimization lever is reducing tokens per query:
-- Reducing top-k from 5 to 3 cuts context by ~40%, saving ~$0.006/query
-- Switching to GPT-4o-mini ($0.15/1M input, $0.60/1M output) would reduce LLM
-costs by ~95%, bringing 100-user monthly cost from ~$218 to ~$15
+**GPT-4o-mini is already the cost-optimized choice** — at 100 users, monthly cost is ~$8.
+The primary remaining optimization is caching frequent queries with Redis — top 20% of
+queries likely repeat; Redis cache would eliminate LLM calls for cached results.
 
 **Embedding costs are negligible** — even at 100,000 users, embedding costs are
-only ~$300/month, less than 0.2% of total spend.
+only ~$300/month, less than 3% of total spend.
 
 **Pinecone scales linearly** — free tier handles up to ~1,000 users comfortably.
 Above that, dedicated pod pricing applies.
 
 ### Cost Optimization Roadmap
-1. **Switch to GPT-4o-mini** for simple queries — saves ~95% on LLM costs
-2. **Cache frequent queries** — top 20% of queries likely repeat; Redis cache
+1. **Cache frequent queries** — top 20% of queries likely repeat; Redis cache
    would eliminate LLM calls for cached results
-3. **Reduce max_tokens** — cap responses at 300 tokens for factual queries
-4. **Batch embedding** — embed new code additions in bulk rather than one-by-one
+2. **Reduce max_tokens** — cap responses at 300 tokens for factual queries
+3. **Batch embedding** — embed new code additions in bulk rather than one-by-one

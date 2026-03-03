@@ -120,11 +120,18 @@ def _distance_to_score(distance: float) -> float:
     return max(0.0, min(100.0, score_pct))
 
 
+ENTRY_POINT_KEYWORDS = ("main entry", "entry point", "start", "begin", "program start")
+ENTRY_POINT_APPEND = " Focus your answer on IDENTIFICATION DIVISION, PROGRAM-ID, and PROCEDURE DIVISION entries. Keep your answer under 3 sentences."
+
+
 @app.post("/query", response_model=QueryResponse)
 async def query(request: QueryRequest):
     start_time = time.time()
-    vectorstore = get_vectorstore()
+    q_lower = request.question.lower()
+    is_entry_point_query = any(kw in q_lower for kw in ENTRY_POINT_KEYWORDS)
+    system_prompt = SYSTEM_PROMPT_QUERY + (ENTRY_POINT_APPEND if is_entry_point_query else "")
 
+    vectorstore = get_vectorstore()
     doc_scores = vectorstore.similarity_search_with_score(request.question, k=TOP_K)
 
     if not doc_scores:
@@ -140,7 +147,7 @@ async def query(request: QueryRequest):
     context = _build_context(docs)
 
     prompt = ChatPromptTemplate.from_messages([
-        ("system", SYSTEM_PROMPT_QUERY),
+        ("system", system_prompt),
         ("human", "Context:\n{context}\n\nQuestion: {question}"),
     ])
 
