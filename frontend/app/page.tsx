@@ -4,7 +4,7 @@ import { useState } from "react";
 import SyntaxHighlighter from "react-syntax-highlighter";
 import { vscDarkPlus } from "react-syntax-highlighter/dist/esm/styles/prism";
 
-type TabId = "query" | "dependencies" | "document" | "patterns";
+type TabId = "query" | "dependencies" | "document" | "patterns" | "business-logic";
 
 type SourceItem = {
   file: string;
@@ -22,6 +22,7 @@ const TABS: { id: TabId; label: string }[] = [
   { id: "dependencies", label: "🔗 Dependencies" },
   { id: "document", label: "📄 Documentation" },
   { id: "patterns", label: "🔎 Patterns" },
+  { id: "business-logic", label: "💼 Business Logic" },
 ];
 
 const EXAMPLE_QUERIES: Record<TabId, string[]> = {
@@ -46,6 +47,11 @@ const EXAMPLE_QUERIES: Record<TabId, string[]> = {
     "Show all error handling patterns",
     "Find all PERFORM statements",
   ],
+  "business-logic": [
+    "Extract business rules from file I/O section",
+    "What business process does error handling implement?",
+    "Explain the business logic of the main procedure",
+  ],
 };
 
 const PLACEHOLDERS: Record<TabId, string> = {
@@ -53,6 +59,7 @@ const PLACEHOLDERS: Record<TabId, string> = {
   dependencies: "Ask about what calls what (e.g. What does MAIN-SECTION call?)",
   document: "Enter a paragraph or file name to generate documentation for",
   patterns: "Search for a code pattern (e.g. OPEN READ WRITE for file I/O)",
+  "business-logic": "Describe a section to extract business rules from (e.g. interest calculation, file processing)",
 };
 
 export default function Home() {
@@ -60,6 +67,7 @@ export default function Home() {
   const [queryInput, setQueryInput] = useState("");
   const [docInput, setDocInput] = useState("");
   const [patternInput, setPatternInput] = useState("OPEN READ WRITE");
+  const [businessLogicInput, setBusinessLogicInput] = useState("");
   const [answer, setAnswer] = useState("");
   const [sources, setSources] = useState<SourceItem[]>([]);
   const [callGraph, setCallGraph] = useState<{ caller: string; callee: string; file: string; line: number }[]>([]);
@@ -75,18 +83,21 @@ export default function Home() {
     if (activeTab === "query") return queryInput;
     if (activeTab === "dependencies") return queryInput;
     if (activeTab === "document") return docInput;
+    if (activeTab === "business-logic") return businessLogicInput;
     return patternInput;
   };
 
   const setInput = (v: string) => {
     if (activeTab === "query" || activeTab === "dependencies") setQueryInput(v);
     else if (activeTab === "document") setDocInput(v);
+    else if (activeTab === "business-logic") setBusinessLogicInput(v);
     else setPatternInput(v);
   };
 
   const canSubmit = () => {
     if (activeTab === "query" || activeTab === "dependencies") return queryInput.trim();
     if (activeTab === "document") return docInput.trim();
+    if (activeTab === "business-logic") return businessLogicInput.trim();
     return patternInput.trim();
   };
 
@@ -134,6 +145,17 @@ export default function Home() {
         if (!res.ok) throw new Error(`API error: ${res.status}`);
         const data = await res.json();
         setAnswer(data.documentation);
+        setSources(data.sources || []);
+        setLatencyMs(data.latency_ms ?? null);
+      } else if (activeTab === "business-logic") {
+        const res = await fetch(`${apiUrl}/business-logic`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ question: businessLogicInput.trim() }),
+        });
+        if (!res.ok) throw new Error(`API error: ${res.status}`);
+        const data = await res.json();
+        setAnswer(data.business_logic);
         setSources(data.sources || []);
         setLatencyMs(data.latency_ms ?? null);
       } else {
@@ -189,6 +211,7 @@ export default function Home() {
     if (activeTab === "query") return "Ask";
     if (activeTab === "dependencies") return "Search";
     if (activeTab === "document") return "Generate";
+    if (activeTab === "business-logic") return "Extract";
     return "Search";
   };
 
@@ -278,7 +301,7 @@ export default function Home() {
         {answer && (
           <div className="mb-8 rounded-lg border border-gray-800 bg-gray-900/50 p-6">
             <h2 className="mb-3 text-sm font-semibold uppercase tracking-wider text-gray-400">
-              {activeTab === "document" ? "Documentation" : "Answer"}
+              {activeTab === "document" ? "Documentation" : activeTab === "business-logic" ? "Business Logic" : "Answer"}
             </h2>
             <div className="whitespace-pre-wrap text-gray-200">{answer}</div>
             {latencyMs != null && (

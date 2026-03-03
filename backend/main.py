@@ -40,6 +40,11 @@ MAX_TOKENS = 300
 SYSTEM_PROMPT_QUERY = """COBOL expert. Answer ONLY from provided context. Cite file names and line numbers. If the asked identifier is not in context, say "I couldn't find [identifier] in the indexed codebase. Here is what I found that may be related:" then summarize the closest chunks. If the requested identifier, paragraph, or function does not exist in the retrieved context, respond in exactly 2 sentences maximum: one sentence saying it was not found, and one sentence describing the closest related code you did find. Never write more than 2 sentences for a not-found response."""
 SYSTEM_PROMPT_DEPS = """COBOL expert. Extract PERFORM call relationships. Return JSON array: [{{"caller":"X","callee":"Y","file":"...","line":N}}]. Use only provided code. If none: []."""
 SYSTEM_PROMPT_DOC = """Technical writer. Write concise docs for this COBOL code: purpose, inputs/outputs, key logic. Use only provided code."""
+SYSTEM_PROMPT_BUSINESS_LOGIC = """You are an expert at analyzing legacy COBOL code and extracting business rules. Given the following COBOL code, identify and explain the business rules in plain English. Format your response exactly like this:
+Business Rule: [one sentence summary]
+Details: [2-3 sentences explaining what the code does]
+Data Involved: [list the key data fields mentioned]
+Business Impact: [one sentence on what breaks if this code fails]"""
 
 
 class QueryRequest(BaseModel):
@@ -381,3 +386,58 @@ async def pattern_detection(body: PatternRequest):
     answer = f"Found {len(docs)} chunk(s) matching pattern '{body.keyword}' (file I/O and related operations)."
     latency_ms = round((time.time() - start_time) * 1000)
     return PatternResponse(answer=answer, sources=sources, latency_ms=latency_ms)
+
+
+class BusinessLogicResponse(BaseModel):
+    business_logic: str
+    sources: list[SourceItem]
+    latency_ms: int
+
+
+@app.post("/business-logic", response_model=BusinessLogicResponse)
+async def business_logic(request: QueryRequest):
+    """Extract business rules from COBOL code using similarity search and GPT-4o-mini."""
+    start_time = time.time()
+    vectorstore = get_vectorstore()
+    doc_scores = vectorstore.similarity_search_with_score(request.question, k=TOP_K)
+
+    if not doc_scores:
+        latency_ms = round((time.time() - start_time) * 1000)
+        return BusinessLogicResponse(
+            business_logic="No relevant code found for your question. Try rephrasing or asking about a specific section.",
+            sources=[],
+            latency_ms=latency_ms,
+        )
+
+    docs = [d for d, _ in doc_scores]
+    scores = [_distance_to_score(s) for _, s in doc_scores]
+    context = _build_context(docs)
+
+    prompt = ChatPromptTemplate.from_messages([
+        ("system", SYSTEM_PROMPT_BUSINESS_LOGIC),
+        ("human", "COBOL code:\n{context}\n\nExtract business rules:"),
+    ])
+    llm = ChatOpenAI(model="gpt-4o-mini", temperature=0, max_tokens=MAX_TOKENS)
+    chain = prompt | llm | StrOutputParser()
+    business_logic_text = chain.invoke({"context": context})
+
+    sources = [
+        SourceItem(
+            file=d.metadata.get("file_name", "unknown"),
+            path=d.metadata.get("source", ""),
+            paragraph=d.metadata.get("paragraph", ""),
+            start_line=d.metadata.get("start_line", 0),
+            end_line=d.metadata.get("end_line", 0),
+            snippet=d.page_content[:SNIPPET_MAX_CHARS] + ("..." if len(d.page_content) > SNIPPET_MAX_CHARS else ""),
+            score=scores[i],
+            source=d.metadata.get("source", ""),
+        )
+        for i, d in enumerate(docs)
+    ]
+
+    latency_ms = round((time.time() - start_time) * 1000)
+    return BusinessLogicResponse(
+        business_logic=business_logic_text,
+        sources=sources,
+        latency_ms=latency_ms,
+    )
