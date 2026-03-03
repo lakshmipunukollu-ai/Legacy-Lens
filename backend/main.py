@@ -31,9 +31,9 @@ app.add_middleware(
 )
 
 # Latency optimization constants
-SNIPPET_MAX_CHARS = 300
-CONTEXT_MAX_TOKENS = 8000
-TOP_K = 3
+SNIPPET_MAX_CHARS = 200
+CONTEXT_MAX_TOKENS = 4000
+TOP_K = 2
 MAX_TOKENS = 500
 
 # Short system prompts (under 100 words each)
@@ -144,7 +144,7 @@ async def query(request: QueryRequest):
         ("human", "Context:\n{context}\n\nQuestion: {question}"),
     ])
 
-    llm = ChatOpenAI(model="gpt-4o", temperature=0, max_tokens=MAX_TOKENS)
+    llm = ChatOpenAI(model="gpt-4o-mini", temperature=0, max_tokens=MAX_TOKENS)
     chain = prompt | llm | StrOutputParser()
     answer = chain.invoke({"context": context, "question": request.question})
 
@@ -248,7 +248,7 @@ async def dependencies(request: QueryRequest):
         ("system", SYSTEM_PROMPT_DEPS),
         ("human", "Code:\n{context}\n\nQuestion or module: {question}\n\nJSON array of call graph items:"),
     ])
-    llm = ChatOpenAI(model="gpt-4o", temperature=0, max_tokens=MAX_TOKENS)
+    llm = ChatOpenAI(model="gpt-4o-mini", temperature=0, max_tokens=MAX_TOKENS)
     chain = prompt | llm | StrOutputParser()
     raw = chain.invoke({"context": context, "question": request.question or "all PERFORM calls"})
     # Parse JSON from response (may be wrapped in markdown)
@@ -310,7 +310,7 @@ async def generate_documentation(body: DocumentRequest):
         ("system", SYSTEM_PROMPT_DOC),
         ("human", "Code:\n{context}\n\nWrite technical documentation:"),
     ])
-    llm = ChatOpenAI(model="gpt-4o", temperature=0, max_tokens=MAX_TOKENS)
+    llm = ChatOpenAI(model="gpt-4o-mini", temperature=0, max_tokens=MAX_TOKENS)
     chain = prompt | llm | StrOutputParser()
     documentation = chain.invoke({"context": context})
     sources = [
