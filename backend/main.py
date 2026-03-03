@@ -40,11 +40,11 @@ MAX_TOKENS = 300
 SYSTEM_PROMPT_QUERY = """COBOL expert. Answer ONLY from provided context. Cite file names and line numbers. If the asked identifier is not in context, say "I couldn't find [identifier] in the indexed codebase. Here is what I found that may be related:" then summarize the closest chunks. If the requested identifier, paragraph, or function does not exist in the retrieved context, respond in exactly 2 sentences maximum: one sentence saying it was not found, and one sentence describing the closest related code you did find. Never write more than 2 sentences for a not-found response."""
 SYSTEM_PROMPT_DEPS = """COBOL expert. Extract PERFORM call relationships. Return JSON array: [{{"caller":"X","callee":"Y","file":"...","line":N}}]. Use only provided code. If none: []."""
 SYSTEM_PROMPT_DOC = """Technical writer. Write concise docs for this COBOL code: purpose, inputs/outputs, key logic. Use only provided code."""
-SYSTEM_PROMPT_BUSINESS_LOGIC = """You are an expert at analyzing legacy COBOL code and extracting business rules. Given the following COBOL code, identify and explain the business rules in plain English. Format your response exactly like this:
-Business Rule: [one sentence summary]
-Details: [2-3 sentences explaining what the code does]
-Data Involved: [list the key data fields mentioned]
-Business Impact: [one sentence on what breaks if this code fails]"""
+SYSTEM_PROMPT_BUSINESS_LOGIC = """You are a COBOL expert. Analyze the code and respond in exactly this format with no extra text:
+Business Rule: [one sentence]
+Details: [one sentence]
+Data Involved: [comma separated fields]
+Business Impact: [one sentence]"""
 
 
 class QueryRequest(BaseModel):
@@ -322,7 +322,7 @@ async def generate_documentation(body: DocumentRequest):
         ("system", SYSTEM_PROMPT_DOC),
         ("human", "Code:\n{context}\n\nWrite technical documentation:"),
     ])
-    llm = ChatOpenAI(model="gpt-4o-mini", temperature=0, max_tokens=MAX_TOKENS)
+    llm = ChatOpenAI(model="gpt-4o-mini", temperature=0, max_tokens=200)
     chain = prompt | llm | StrOutputParser()
     documentation = chain.invoke({"context": context})
     sources = [
@@ -417,7 +417,7 @@ async def business_logic(request: QueryRequest):
         ("system", SYSTEM_PROMPT_BUSINESS_LOGIC),
         ("human", "COBOL code:\n{context}\n\nExtract business rules:"),
     ])
-    llm = ChatOpenAI(model="gpt-4o-mini", temperature=0, max_tokens=MAX_TOKENS)
+    llm = ChatOpenAI(model="gpt-4o-mini", temperature=0, max_tokens=200)
     chain = prompt | llm | StrOutputParser()
     business_logic_text = chain.invoke({"context": context})
 
