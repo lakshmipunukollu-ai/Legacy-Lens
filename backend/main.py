@@ -82,8 +82,8 @@ async def query(request: QueryRequest):
     start_time = time.time()
     vectorstore = get_vectorstore()
 
-    # Retrieve top-5 matching chunks with scores
-    doc_scores = vectorstore.similarity_search_with_score(request.question, k=5)
+    # Retrieve top-3 matching chunks with scores (reduced for latency)
+    doc_scores = vectorstore.similarity_search_with_score(request.question, k=3)
 
     if not doc_scores:
         latency_ms = round((time.time() - start_time) * 1000)
@@ -109,7 +109,7 @@ async def query(request: QueryRequest):
         ("human", "Context:\n{context}\n\nQuestion: {question}"),
     ])
 
-    llm = ChatOpenAI(model="gpt-4o", temperature=0)
+    llm = ChatOpenAI(model="gpt-4o", temperature=0, max_tokens=500)
     chain = prompt | llm | StrOutputParser()
     answer = chain.invoke({"context": context, "question": request.question})
 
@@ -153,11 +153,9 @@ async def get_file(path: str = ""):
         from fastapi.responses import JSONResponse
         return JSONResponse(status_code=403, content={"detail": "Path traversal not allowed."})
     if not full_path.exists() or not full_path.is_file():
-        from fastapi.responses import JSONResponse
-        return JSONResponse(
-            status_code=404,
-            content={"detail": f"File not found: {path}"},
-        )
+        return {
+            "error": "Full file view is available in local development only. The codebase is not bundled with the production deployment."
+        }
     try:
         content = full_path.read_text(encoding="utf-8", errors="replace")
         line_count = len(content.splitlines())
@@ -186,7 +184,7 @@ async def dependencies(request: QueryRequest):
     vectorstore = get_vectorstore()
     doc_scores = vectorstore.similarity_search_with_score(
         "PERFORM statement calling paragraph or section " + (request.question or "dependencies"),
-        k=10,
+        k=3,
     )
     if not doc_scores:
         latency_ms = round((time.time() - start_time) * 1000)
@@ -203,7 +201,7 @@ async def dependencies(request: QueryRequest):
         ("system", "You are a COBOL expert. Extract PERFORM-style call relationships. Return a JSON array of objects with keys: caller (paragraph/section name), callee (paragraph name being performed), file, line. Use only the provided code. If none found return []."),
         ("human", "Code:\n{context}\n\nQuestion or module: {question}\n\nJSON array of call graph items:"),
     ])
-    llm = ChatOpenAI(model="gpt-4o", temperature=0)
+    llm = ChatOpenAI(model="gpt-4o", temperature=0, max_tokens=500)
     chain = prompt | llm | StrOutputParser()
     raw = chain.invoke({"context": context, "question": request.question or "all PERFORM calls"})
     # Parse JSON from response (may be wrapped in markdown)
@@ -249,7 +247,7 @@ async def generate_documentation(body: DocumentRequest):
     start_time = time.time()
     vectorstore = get_vectorstore()
     query = body.paragraph or body.file_name or "main program entry procedure division"
-    doc_scores = vectorstore.similarity_search_with_score(query, k=5)
+    doc_scores = vectorstore.similarity_search_with_score(query, k=3)
     if not doc_scores:
         latency_ms = round((time.time() - start_time) * 1000)
         return DocumentResponse(
@@ -267,7 +265,7 @@ async def generate_documentation(body: DocumentRequest):
         ("system", "You are a technical writer. Write clear, concise technical documentation for the following COBOL code. Include purpose, inputs/outputs, and key logic. Use only the provided code."),
         ("human", "Code:\n{context}\n\nWrite technical documentation:"),
     ])
-    llm = ChatOpenAI(model="gpt-4o", temperature=0)
+    llm = ChatOpenAI(model="gpt-4o", temperature=0, max_tokens=500)
     chain = prompt | llm | StrOutputParser()
     documentation = chain.invoke({"context": context})
     sources = [
@@ -303,7 +301,7 @@ async def pattern_detection(body: PatternRequest):
     vectorstore = get_vectorstore()
     doc_scores = vectorstore.similarity_search_with_score(
         f"COBOL code containing {body.keyword} file operations or similar",
-        k=10,
+        k=3,
     )
     if not doc_scores:
         latency_ms = round((time.time() - start_time) * 1000)

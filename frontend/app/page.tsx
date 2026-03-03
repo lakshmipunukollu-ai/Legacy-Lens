@@ -169,12 +169,16 @@ export default function Home() {
     }
     try {
       const res = await fetch(`${apiUrl}/file?path=${encodeURIComponent(sourcePath)}`);
-      if (!res.ok) throw new Error("File not found");
       const data = await res.json();
+      if (data.error || !res.ok) {
+        setError("Full file preview is not available in production. Clone the repo locally to use this feature.");
+        return;
+      }
+      setError(null);
       setExpandedFile({ path: data.path, content: data.content, line_count: data.line_count });
       setExpandedSourceIdx(idx);
     } catch {
-      setError("Could not load full file. It may not exist on the server.");
+      setError("Full file preview is not available in production. Clone the repo locally to use this feature.");
     }
   };
 

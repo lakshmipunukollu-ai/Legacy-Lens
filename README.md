@@ -7,6 +7,10 @@
 - **Frontend:** https://legacy-lens-nine.vercel.app
 - **Backend API:** https://legacy-lens-production-5e14.up.railway.app
 
+## 📹 Demo Video
+
+[Watch the demo on Loom](LINK_TO_BE_ADDED)
+
 ## Architecture
 
 LegacyLens uses a Retrieval-Augmented Generation (RAG) pipeline to make legacy COBOL code queryable via natural language.
@@ -18,7 +22,7 @@ User Query
     ↓
 OpenAI text-embedding-3-small (1024 dims)
     ↓
-Pinecone Similarity Search (top-5 chunks, cosine)
+Pinecone Similarity Search (top-3 chunks, cosine)
     ↓
 Context Assembly (chunks + file/line metadata)
     ↓
