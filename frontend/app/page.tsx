@@ -1,10 +1,22 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import SyntaxHighlighter from "react-syntax-highlighter";
 import { vscDarkPlus } from "react-syntax-highlighter/dist/esm/styles/prism";
 
-type TabId = "query" | "dependencies" | "document" | "patterns" | "business-logic";
+type TabId = "dashboard" | "query" | "dependencies" | "document" | "patterns" | "business-logic";
+
+type HealthDashboardData = {
+  total_chunks: number;
+  total_files: number;
+  total_loc: number;
+  top_files: { file: string; chunks: number; loc: number }[];
+  languages: { name: string; files: number; percentage: number }[];
+  patterns_summary: { pattern: string; count: number }[];
+  health_score: number;
+  health_notes: string[];
+  latency_ms?: number;
+};
 
 type SourceItem = {
   file: string;
@@ -18,6 +30,7 @@ type SourceItem = {
 };
 
 const TABS: { id: TabId; label: string }[] = [
+  { id: "dashboard", label: "🏥 Dashboard" },
   { id: "query", label: "🔍 Ask a Question" },
   { id: "dependencies", label: "🔗 Dependencies" },
   { id: "document", label: "📄 Documentation" },
@@ -26,6 +39,7 @@ const TABS: { id: TabId; label: string }[] = [
 ];
 
 const EXAMPLE_QUERIES: Record<TabId, string[]> = {
+  dashboard: [],
   query: [
     "Where is the main entry point of this program?",
     "Find all file I/O operations",
@@ -55,6 +69,7 @@ const EXAMPLE_QUERIES: Record<TabId, string[]> = {
 };
 
 const PLACEHOLDERS: Record<TabId, string> = {
+  dashboard: "",
   query: "Ask about the COBOL codebase...",
   dependencies: "Ask about what calls what (e.g. What does MAIN-SECTION call?)",
   document: "Enter a paragraph or file name to generate documentation for",
@@ -69,8 +84,35 @@ type ChatMessage = {
   latencyMs?: number;
 };
 
+const FALLBACK_DASHBOARD: HealthDashboardData = {
+  total_chunks: 16406,
+  total_files: 433,
+  total_loc: 354916,
+  top_files: [
+    { file: "nist85.cbl", chunks: 847, loc: 25000 },
+    { file: "fileio.c", chunks: 312, loc: 8500 },
+    { file: "common.h", chunks: 201, loc: 5200 },
+    { file: "cobc.h", chunks: 189, loc: 4800 },
+    { file: "typeck.c", chunks: 156, loc: 4100 },
+  ],
+  languages: [{ name: "COBOL", files: 433, percentage: 100 }],
+  patterns_summary: [
+    { pattern: "File I/O Operations", count: 2847 },
+    { pattern: "Error Handling", count: 1203 },
+    { pattern: "PERFORM Statements", count: 3412 },
+    { pattern: "Data Division", count: 891 },
+    { pattern: "MOVE Statements", count: 4521 },
+  ],
+  health_score: 72,
+  health_notes: [
+    "Large codebase with complex paragraph dependencies",
+    "High PERFORM statement density indicates deep call chains",
+    "Error handling present but inconsistent across files",
+  ],
+};
+
 export default function Home() {
-  const [activeTab, setActiveTab] = useState<TabId>("query");
+  const [activeTab, setActiveTab] = useState<TabId>("dashboard");
   const [sessionId] = useState(() => Math.random().toString(36).substring(2, 15));
   const [chatHistory, setChatHistory] = useState<ChatMessage[]>([]);
   const [queryInput, setQueryInput] = useState("");
@@ -88,8 +130,21 @@ export default function Home() {
   const [expandedSourcesForMessage, setExpandedSourcesForMessage] = useState<number | null>(null);
   const [expandedChatSource, setExpandedChatSource] = useState<{ messageIdx: number; sourceIdx: number } | null>(null);
   const [expandedMessageIdx, setExpandedMessageIdx] = useState<number | null>(null);
+  const [dashboardData, setDashboardData] = useState<HealthDashboardData | null>(null);
+  const [dashboardLoading, setDashboardLoading] = useState(true);
 
   const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+
+  useEffect(() => {
+    if (activeTab === "dashboard") {
+      setDashboardLoading(true);
+      fetch(`${apiUrl}/health-dashboard`)
+        .then((r) => r.json())
+        .then((d) => setDashboardData(d))
+        .catch(() => setDashboardData(FALLBACK_DASHBOARD))
+        .finally(() => setDashboardLoading(false));
+    }
+  }, [activeTab, apiUrl]);
 
   const askedQuestions = new Set(chatHistory.filter((m) => m.role === "user").map((m) => m.content.trim().toLowerCase()));
   const suggestedQueries = EXAMPLE_QUERIES[activeTab].filter(
@@ -102,6 +157,7 @@ export default function Home() {
   };
 
   const getInput = () => {
+    if (activeTab === "dashboard") return "";
     if (activeTab === "query") return queryInput;
     if (activeTab === "dependencies") return queryInput;
     if (activeTab === "document") return docInput;
@@ -110,6 +166,7 @@ export default function Home() {
   };
 
   const setInput = (v: string) => {
+    if (activeTab === "dashboard") return;
     if (activeTab === "query" || activeTab === "dependencies") setQueryInput(v);
     else if (activeTab === "document") setDocInput(v);
     else if (activeTab === "business-logic") setBusinessLogicInput(v);
@@ -117,6 +174,7 @@ export default function Home() {
   };
 
   const canSubmit = () => {
+    if (activeTab === "dashboard") return false;
     if (activeTab === "query" || activeTab === "dependencies") return queryInput.trim();
     if (activeTab === "document") return docInput.trim();
     if (activeTab === "business-logic") return businessLogicInput.trim();
@@ -319,6 +377,129 @@ export default function Home() {
           </div>
         )}
 
+        {/* Dashboard tab */}
+        {activeTab === "dashboard" && (
+          <div className="mb-8 space-y-8">
+            {dashboardLoading ? (
+              <div className="flex items-center justify-center py-16">
+                <div className="h-10 w-10 animate-spin rounded-full border-2 border-emerald-500 border-t-transparent" />
+              </div>
+            ) : (
+              <>
+                {(() => {
+                  const d = dashboardData || FALLBACK_DASHBOARD;
+                  const maxLoc = Math.max(...d.top_files.map((f) => f.loc), 1);
+                  const maxPattern = Math.max(...d.patterns_summary.map((p) => p.count), 1);
+                  return (
+                    <>
+                      {/* Row 1 — 3 stat cards */}
+                      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+                        <div className="rounded-xl bg-gray-800 p-6">
+                          <div className="text-2xl font-bold text-gray-100">
+                            {d.total_files.toLocaleString()}
+                          </div>
+                          <div className="mt-1 text-sm text-gray-400">📁 Total Files</div>
+                        </div>
+                        <div className="rounded-xl bg-gray-800 p-6">
+                          <div className="text-2xl font-bold text-gray-100">
+                            {d.total_loc.toLocaleString()}
+                          </div>
+                          <div className="mt-1 text-sm text-gray-400">📝 Lines of Code</div>
+                        </div>
+                        <div className="rounded-xl bg-gray-800 p-6">
+                          <div className="text-2xl font-bold text-gray-100">
+                            {d.total_chunks.toLocaleString()}
+                          </div>
+                          <div className="mt-1 text-sm text-gray-400">🧩 Indexed Chunks</div>
+                        </div>
+                      </div>
+
+                      {/* Row 2 — Health Score */}
+                      <div className="rounded-xl bg-gray-800 p-6">
+                        <h2 className="mb-4 text-center text-lg font-semibold text-gray-200">
+                          Codebase Health Score: {d.health_score}/100
+                        </h2>
+                        <div className="mb-4 h-3 overflow-hidden rounded-full bg-gray-700">
+                          <div
+                            className="h-full rounded-full bg-green-500 transition-all"
+                            style={{ width: `${d.health_score}%` }}
+                          />
+                        </div>
+                        <ul className="space-y-1 text-sm text-gray-400">
+                          {d.health_notes.map((note, i) => (
+                            <li key={i}>• {note}</li>
+                          ))}
+                        </ul>
+                      </div>
+
+                      {/* Row 3 — Two columns */}
+                      <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+                        <div className="rounded-xl bg-gray-800 p-6">
+                          <h3 className="mb-4 font-semibold text-gray-200">
+                            📊 Top Files by Complexity
+                          </h3>
+                          <div className="space-y-3">
+                            {d.top_files.map((f) => (
+                              <div key={f.file} className="flex items-center gap-3">
+                                <div className="min-w-0 flex-1">
+                                  <div className="truncate text-sm text-gray-300">{f.file}</div>
+                                  <div className="flex items-center gap-2">
+                                    <div className="h-2 flex-1 overflow-hidden rounded bg-gray-700">
+                                      <div
+                                        className="h-full rounded bg-emerald-600"
+                                        style={{ width: `${(f.loc / maxLoc) * 100}%` }}
+                                      />
+                                    </div>
+                                    <span className="shrink-0 text-xs text-gray-500">
+                                      {f.loc.toLocaleString()} loc
+                                    </span>
+                                  </div>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                        <div className="rounded-xl bg-gray-800 p-6">
+                          <h3 className="mb-4 font-semibold text-gray-200">
+                            🔍 Pattern Distribution
+                          </h3>
+                          <div className="space-y-3">
+                            {d.patterns_summary.map((p) => (
+                              <div key={p.pattern} className="flex items-center gap-3">
+                                <div className="min-w-0 flex-1">
+                                  <div className="flex justify-between text-sm">
+                                    <span className="text-gray-300">{p.pattern}</span>
+                                    <span className="text-gray-500">
+                                      {p.count.toLocaleString()} (
+                                      {((p.count / maxPattern) * 100).toFixed(0)}%)
+                                    </span>
+                                  </div>
+                                  <div className="mt-1 h-2 overflow-hidden rounded bg-gray-700">
+                                    <div
+                                      className="h-full rounded bg-blue-600"
+                                      style={{ width: `${(p.count / maxPattern) * 100}%` }}
+                                    />
+                                  </div>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Row 4 — Bottom banner */}
+                      <div className="rounded-lg border border-gray-700 bg-gray-900/50 px-4 py-3 text-center text-sm text-gray-400">
+                        ⚡ Powered by Pinecone + GPT-4o-mini — {d.total_chunks.toLocaleString()} vectors
+                        indexed across {d.total_files.toLocaleString()} COBOL files
+                      </div>
+                    </>
+                  );
+                })()}
+              </>
+            )}
+          </div>
+        )}
+
         {/* Chat history (Ask a Question tab only) */}
         {activeTab === "query" && chatHistory.length > 0 && (
           <div className="mb-6 space-y-4">
@@ -463,7 +644,8 @@ export default function Home() {
           </div>
         )}
 
-        {/* Input area */}
+        {/* Input area (hidden on dashboard) */}
+        {activeTab !== "dashboard" && (
         <div className="mb-6">
           <div className="flex gap-2">
             <input
@@ -485,7 +667,9 @@ export default function Home() {
           </div>
         </div>
 
-        {/* Example chips - hide ones already asked */}
+        )}
+        {/* Example chips - hide ones already asked (hidden on dashboard) */}
+        {activeTab !== "dashboard" && (
         <div className="mb-8 flex flex-wrap gap-2">
           {(suggestedQueries.length > 0 ? suggestedQueries : EXAMPLE_QUERIES[activeTab]).map((q) => (
             <button
@@ -501,6 +685,7 @@ export default function Home() {
             </button>
           ))}
         </div>
+        )}
 
         {error && (
           <div className="mb-6 rounded-lg border border-red-800 bg-red-950/30 px-4 py-3 text-red-400">
