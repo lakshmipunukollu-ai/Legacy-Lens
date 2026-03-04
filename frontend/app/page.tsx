@@ -277,32 +277,32 @@ export default function Home() {
           Query the COBOL codebase in natural language
         </p>
 
-        {/* Tab bar - scrollable on smaller screens */}
-        <div className="flex items-center justify-between gap-4 mb-6 border-b border-gray-700 pb-0">
-          <div className="flex overflow-x-auto gap-1 min-w-0">
-            {TABS.map((tab) => (
-              <button
-                key={tab.id}
-                onClick={() => setActiveTab(tab.id)}
-                className={`whitespace-nowrap px-4 py-2 text-sm font-medium transition shrink-0 ${
-                  activeTab === tab.id
-                    ? "border-b-2 border-blue-500 text-blue-400"
-                    : "text-gray-400 hover:text-gray-200"
-                }`}
-              >
-                {tab.label}
-              </button>
-            ))}
-          </div>
-          {activeTab === "query" && (
+        {/* Tab bar - scrollable on smaller screens, all 5 tabs */}
+        <div className="flex overflow-x-auto gap-1 mb-4 border-b border-gray-700 pb-0">
+          {TABS.map((tab) => (
+            <button
+              key={tab.id}
+              onClick={() => setActiveTab(tab.id)}
+              className={`whitespace-nowrap px-4 py-2 text-sm font-medium transition shrink-0 ${
+                activeTab === tab.id
+                  ? "border-b-2 border-blue-500 text-blue-400"
+                  : "text-gray-400 hover:text-gray-200"
+              }`}
+            >
+              {tab.label}
+            </button>
+          ))}
+        </div>
+        {activeTab === "query" && (
+          <div className="mb-6">
             <button
               onClick={handleClearConversation}
-              className="shrink-0 rounded border border-gray-600 bg-gray-800 px-3 py-1.5 text-sm text-gray-300 hover:bg-gray-700"
+              className="rounded border border-gray-600 bg-gray-800 px-3 py-1.5 text-sm text-gray-300 hover:bg-gray-700"
             >
               🗑 Clear conversation
             </button>
-          )}
-        </div>
+          </div>
+        )}
 
         {/* Chat history (Ask a Question tab only) */}
         {activeTab === "query" && chatHistory.length > 0 && (
