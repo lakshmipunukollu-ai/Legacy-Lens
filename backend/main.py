@@ -173,8 +173,8 @@ def enhance_query_with_history(question: str, history: list) -> str:
     if not history:
         return question
 
-    # Only enhance if under 6 words (vague/short)
-    if len(question.split()) >= 6:
+    # Only enhance if 8 or fewer words (vague/short follow-ups like "What does that section do?")
+    if len(question.split()) > 8:
         return question
 
     # Extract nouns from last assistant message
