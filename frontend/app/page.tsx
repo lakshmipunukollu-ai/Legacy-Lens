@@ -2,10 +2,11 @@
 
 import { useState, useEffect, useCallback } from "react";
 import SyntaxHighlighter from "react-syntax-highlighter";
+import ReactMarkdown from "react-markdown";
 import DependencyGraph from "./DependencyGraph";
 import { vscDarkPlus } from "react-syntax-highlighter/dist/esm/styles/prism";
 
-type TabId = "dashboard" | "query" | "dependencies" | "document" | "patterns" | "business-logic";
+type TabId = "dashboard" | "query" | "dependencies" | "document" | "patterns" | "explain-snippet" | "business-logic";
 
 type HealthDashboardData = {
   total_chunks: number;
@@ -36,6 +37,7 @@ const TABS: { id: TabId; label: string }[] = [
   { id: "dependencies", label: "🔗 Dependencies" },
   { id: "document", label: "📄 Documentation" },
   { id: "patterns", label: "🔎 Patterns" },
+  { id: "explain-snippet", label: "🔬 Explain Snippet" },
   { id: "business-logic", label: "💼 Business Logic" },
 ];
 
@@ -63,6 +65,7 @@ const EXAMPLE_QUERIES: Record<TabId, string[]> = {
     "Show all error handling patterns",
     "Find all PERFORM statements",
   ],
+  "explain-snippet": [],
   "business-logic": [
     "Extract business rules from file I/O section",
     "What business process does error handling implement?",
@@ -76,8 +79,15 @@ const PLACEHOLDERS: Record<TabId, string> = {
   dependencies: "Ask about what calls what (e.g. What does MAIN-SECTION call?)",
   document: "Enter a paragraph or file name to generate documentation for",
   patterns: "Search for a code pattern (e.g. OPEN READ WRITE for file I/O)",
+  "explain-snippet": "",
   "business-logic": "Describe a section to extract business rules from (e.g. interest calculation, file processing)",
 };
+
+const EXPLAIN_SNIPPET_EXAMPLES = [
+  "MOVE ZEROS TO WS-COUNTER.",
+  "PERFORM UNTIL WS-EOF = 'Y' READ INPUT-FILE INTO WS-RECORD AT END MOVE 'Y' TO WS-EOF END-READ END-PERFORM.",
+  "IF WS-AMOUNT > 1000 MOVE 'HIGH' TO WS-CATEGORY ELSE MOVE 'LOW' TO WS-CATEGORY END-IF.",
+];
 
 type ChatMessage = {
   role: "user" | "assistant";
@@ -120,6 +130,9 @@ export default function Home() {
   const [queryInput, setQueryInput] = useState("");
   const [docInput, setDocInput] = useState("");
   const [patternInput, setPatternInput] = useState("OPEN READ WRITE");
+  const [snippetInput, setSnippetInput] = useState("");
+  const [snippetExplanation, setSnippetExplanation] = useState<string | null>(null);
+  const [snippetLatencyMs, setSnippetLatencyMs] = useState<number | null>(null);
   const [businessLogicInput, setBusinessLogicInput] = useState("");
   const [answer, setAnswer] = useState("");
   const [sources, setSources] = useState<SourceItem[]>([]);
@@ -192,6 +205,7 @@ export default function Home() {
     if (activeTab === "query") return queryInput;
     if (activeTab === "dependencies") return queryInput;
     if (activeTab === "document") return docInput;
+    if (activeTab === "explain-snippet") return snippetInput;
     if (activeTab === "business-logic") return businessLogicInput;
     return patternInput;
   };
@@ -200,6 +214,7 @@ export default function Home() {
     if (activeTab === "dashboard") return;
     if (activeTab === "query" || activeTab === "dependencies") setQueryInput(v);
     else if (activeTab === "document") setDocInput(v);
+    else if (activeTab === "explain-snippet") setSnippetInput(v);
     else if (activeTab === "business-logic") setBusinessLogicInput(v);
     else setPatternInput(v);
   };
@@ -208,6 +223,7 @@ export default function Home() {
     if (activeTab === "dashboard") return false;
     if (activeTab === "query" || activeTab === "dependencies") return queryInput.trim();
     if (activeTab === "document") return docInput.trim();
+    if (activeTab === "explain-snippet") return snippetInput.trim();
     if (activeTab === "business-logic") return businessLogicInput.trim();
     return patternInput.trim();
   };
@@ -236,7 +252,7 @@ export default function Home() {
     if (!canSend) return;
     setLoading(true);
     setError(null);
-    if (activeTab !== "query") {
+    if (activeTab !== "query" && activeTab !== "explain-snippet") {
       setAnswer("");
       setSources([]);
       setCallGraph([]);
@@ -299,6 +315,18 @@ export default function Home() {
         setAnswer(data.documentation);
         setSources(data.sources || []);
         setLatencyMs(data.latency_ms ?? null);
+      } else if (activeTab === "explain-snippet") {
+        setSnippetExplanation(null);
+        setSnippetLatencyMs(null);
+        const res = await fetch(`${apiUrl}/explain-snippet`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ code: snippetInput.trim() }),
+        });
+        if (!res.ok) throw new Error(`API error: ${res.status}`);
+        const data = await res.json();
+        setSnippetExplanation(data.explanation);
+        setSnippetLatencyMs(data.latency_ms ?? null);
       } else if (activeTab === "business-logic") {
         const res = await fetch(`${apiUrl}/business-logic`, {
           method: "POST",
@@ -370,6 +398,7 @@ export default function Home() {
     if (activeTab === "query") return "Ask";
     if (activeTab === "dependencies") return "Search";
     if (activeTab === "document") return "Generate";
+    if (activeTab === "explain-snippet") return "Explain";
     if (activeTab === "business-logic") return "Extract";
     return "Search";
   };
@@ -556,7 +585,9 @@ export default function Home() {
                         : "bg-gray-800 text-gray-200"
                     }`}
                   >
-                    <div className="whitespace-pre-wrap">{displayContent}</div>
+                    <div className="prose prose-invert prose-sm max-w-none">
+                      <ReactMarkdown>{displayContent}</ReactMarkdown>
+                    </div>
                     {showExpand && (
                       <button
                         onClick={() => setExpandedMessageIdx(isExpanded ? null : msgIdx)}
@@ -677,8 +708,8 @@ export default function Home() {
           </div>
         )}
 
-        {/* Input area (hidden on dashboard) */}
-        {activeTab !== "dashboard" && (
+        {/* Input area (hidden on dashboard and explain-snippet) */}
+        {activeTab !== "dashboard" && activeTab !== "explain-snippet" && (
         <div className="mb-6">
           <div className="flex gap-2">
             <input
@@ -701,8 +732,69 @@ export default function Home() {
         </div>
 
         )}
-        {/* Example chips - hide ones already asked (hidden on dashboard) */}
-        {activeTab !== "dashboard" && (
+
+        {/* Explain Snippet tab: two panels */}
+        {activeTab === "explain-snippet" && (
+          <div className="mb-8 grid grid-cols-1 gap-6 lg:grid-cols-2">
+            <div className="space-y-3">
+              <label className="block text-sm font-medium text-gray-400">Paste COBOL code here</label>
+              <textarea
+                value={snippetInput}
+                onChange={(e) => setSnippetInput(e.target.value)}
+                placeholder="Paste any COBOL paragraph, section, or snippet here..."
+                className="min-h-[300px] w-full rounded-lg border border-gray-700 bg-gray-800 px-4 py-3 font-mono text-sm text-green-400 placeholder-gray-500 focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                disabled={loading}
+              />
+              <button
+                onClick={() => handleSubmit()}
+                disabled={loading || !snippetInput.trim()}
+                className="rounded-lg bg-emerald-600 px-6 py-3 font-medium text-white transition hover:bg-emerald-500 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {getButtonLabel()}
+              </button>
+              <div className="flex flex-wrap gap-2 pt-2">
+                {EXPLAIN_SNIPPET_EXAMPLES.map((snippet, i) => (
+                  <button
+                    key={i}
+                    onClick={() => setSnippetInput(snippet)}
+                    className="rounded-full border border-gray-600 bg-gray-900 px-4 py-2 text-xs font-mono text-gray-300 transition hover:border-emerald-600 hover:text-emerald-400"
+                  >
+                    {snippet.length > 50 ? snippet.slice(0, 47) + "…" : snippet}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div className="rounded-lg border border-gray-800 bg-gray-900/50 p-6">
+              <h2 className="mb-3 text-sm font-semibold uppercase tracking-wider text-gray-400">
+                Explanation
+              </h2>
+              {loading ? (
+                <div className="flex items-center gap-2 py-8">
+                  <div className="h-6 w-6 animate-spin rounded-full border-2 border-emerald-500 border-t-transparent" />
+                  <span className="text-gray-400">Analyzing code...</span>
+                </div>
+              ) : snippetExplanation ? (
+                <>
+                  <div className="prose prose-invert prose-sm max-w-none text-gray-200">
+                    <ReactMarkdown>{snippetExplanation}</ReactMarkdown>
+                  </div>
+                  {snippetLatencyMs != null && (
+                    <div className="mt-4 text-sm text-gray-500">
+                      ⚡ Response time: {snippetLatencyMs}ms
+                    </div>
+                  )}
+                </>
+              ) : (
+                <p className="text-gray-500">
+                  Paste any COBOL code on the left and click Explain to get an instant plain-English breakdown.
+                </p>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Example chips - hide ones already asked (hidden on dashboard and explain-snippet) */}
+        {activeTab !== "dashboard" && activeTab !== "explain-snippet" && (
         <div className="mb-8 flex flex-wrap gap-2">
           {(suggestedQueries.length > 0 ? suggestedQueries : EXAMPLE_QUERIES[activeTab]).map((q) => (
             <button
@@ -789,8 +881,8 @@ export default function Home() {
                     <h3 className="mb-2 text-sm font-semibold text-gray-300">
                       Paragraph explanation
                     </h3>
-                    <div className="whitespace-pre-wrap text-sm text-gray-200">
-                      {selectedNodeAnswer}
+                    <div className="prose prose-invert prose-sm max-w-none text-sm text-gray-200">
+                      <ReactMarkdown>{selectedNodeAnswer}</ReactMarkdown>
                     </div>
                   </div>
                 )}
@@ -799,13 +891,15 @@ export default function Home() {
           </div>
         )}
 
-        {/* Answer (non-query tabs only) */}
-        {activeTab !== "query" && answer && (
+        {/* Answer (non-query, non-explain-snippet tabs only) */}
+        {activeTab !== "query" && activeTab !== "explain-snippet" && answer && (
           <div className="mb-8 rounded-lg border border-gray-800 bg-gray-900/50 p-6">
             <h2 className="mb-3 text-sm font-semibold uppercase tracking-wider text-gray-400">
               {activeTab === "document" ? "Documentation" : activeTab === "business-logic" ? "Business Logic" : "Answer"}
             </h2>
-            <div className="whitespace-pre-wrap text-gray-200">{answer}</div>
+            <div className="prose prose-invert prose-sm max-w-none text-gray-200">
+              <ReactMarkdown>{answer}</ReactMarkdown>
+            </div>
             {latencyMs != null && (
               <div className="mt-3 text-sm text-gray-500">
                 ⚡ Response time: {latencyMs}ms
@@ -815,7 +909,7 @@ export default function Home() {
         )}
 
         {/* Sources (non-query tabs only) - structured cards */}
-        {activeTab !== "query" && sources.length > 0 && (
+        {activeTab !== "query" && activeTab !== "explain-snippet" && sources.length > 0 && (
           <div className="space-y-4">
             <p className="text-xs text-gray-400 mb-2">SOURCES ({sources.length})</p>
             {sources.map((s, i) => (

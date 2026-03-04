@@ -53,6 +53,14 @@ Details: [one sentence]
 Data Involved: [comma separated fields]
 Business Impact: [one sentence]"""
 
+SYSTEM_PROMPT_EXPLAIN_SNIPPET = """You are an expert COBOL developer. The user will paste raw COBOL code. Explain it in plain English using this exact format:
+
+What it does: [1-2 sentences describing the overall purpose]
+Step by step: [numbered list of what each section does]
+Data involved: [bullet list of key variables and data structures]
+Business meaning: [1 sentence on the real-world business purpose]
+Potential issues: [bullet list of any risks, gotchas, or legacy concerns]"""
+
 
 class QueryRequest(BaseModel):
     question: str
@@ -216,6 +224,37 @@ async def query(request: QueryRequest):
 
     latency_ms = round((time.time() - start_time) * 1000)
     return QueryResponse(answer=answer, sources=sources, latency_ms=latency_ms)
+
+
+class ExplainSnippetRequest(BaseModel):
+    code: str
+
+
+class ExplainSnippetResponse(BaseModel):
+    explanation: str
+    latency_ms: int
+
+
+@app.post("/explain-snippet", response_model=ExplainSnippetResponse)
+async def explain_snippet(request: ExplainSnippetRequest):
+    """Explain raw COBOL code directly — no Pinecone, just GPT-4o-mini."""
+    start_time = time.time()
+    code = (request.code or "").strip()
+    if not code:
+        latency_ms = round((time.time() - start_time) * 1000)
+        return ExplainSnippetResponse(
+            explanation="Please paste some COBOL code to explain.",
+            latency_ms=latency_ms,
+        )
+    prompt = ChatPromptTemplate.from_messages([
+        ("system", SYSTEM_PROMPT_EXPLAIN_SNIPPET),
+        ("human", "COBOL code:\n\n{code}\n\nExplain in the required format:"),
+    ])
+    llm = ChatOpenAI(model="gpt-4o-mini", temperature=0, max_tokens=400)
+    chain = prompt | llm | StrOutputParser()
+    explanation = chain.invoke({"code": code})
+    latency_ms = round((time.time() - start_time) * 1000)
+    return ExplainSnippetResponse(explanation=explanation, latency_ms=latency_ms)
 
 
 class ClearHistoryRequest(BaseModel):
