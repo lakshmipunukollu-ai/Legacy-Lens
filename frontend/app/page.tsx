@@ -159,7 +159,11 @@ export default function Home() {
     try {
       if (activeTab === "query") {
         const question = (overrideQuestion ?? queryInput).trim();
-        setChatHistory((prev) => [...prev, { role: "user" as const, content: question }]);
+        setChatHistory((prev) => {
+          const last = prev[prev.length - 1];
+          if (last?.role === "user" && last.content === question) return prev;
+          return [...prev, { role: "user" as const, content: question }];
+        });
         if (!overrideQuestion) setQueryInput("");
         const res = await fetch(`${apiUrl}/query`, {
           method: "POST",
@@ -168,15 +172,19 @@ export default function Home() {
         });
         if (!res.ok) throw new Error(`API error: ${res.status}`);
         const data = await res.json();
-        setChatHistory((prev) => [
-          ...prev,
-          {
-            role: "assistant" as const,
-            content: data.answer,
-            sources: data.sources || [],
-            latencyMs: data.latency_ms ?? undefined,
-          },
-        ]);
+        setChatHistory((prev) => {
+          const last = prev[prev.length - 1];
+          if (last?.role === "assistant") return prev;
+          return [
+            ...prev,
+            {
+              role: "assistant" as const,
+              content: data.answer,
+              sources: data.sources || [],
+              latencyMs: data.latency_ms ?? undefined,
+            },
+          ];
+        });
       } else if (activeTab === "dependencies") {
         const res = await fetch(`${apiUrl}/dependencies`, {
           method: "POST",
@@ -362,6 +370,7 @@ export default function Home() {
                         </button>
                         {expandedSourcesForMessage === msgIdx && (
                           <div className="mt-3 space-y-2">
+                            <p className="text-xs text-gray-400 mb-2">SOURCES ({msg.sources.length})</p>
                             {msg.sources.map((s, sIdx) => (
                               <div
                                 key={sIdx}
@@ -377,8 +386,8 @@ export default function Home() {
                                   {s.score != null && (
                                     <span
                                       className={`shrink-0 px-2 py-0.5 rounded-full font-medium ${
-                                        s.score >= 80 ? "bg-green-900 text-green-300" :
-                                        s.score >= 50 ? "bg-yellow-900 text-yellow-300" :
+                                        s.score >= 55 ? "bg-green-900 text-green-300" :
+                                        s.score >= 40 ? "bg-yellow-900 text-yellow-300" :
                                         "bg-red-900 text-red-300"
                                       }`}
                                     >
@@ -533,9 +542,7 @@ export default function Home() {
         {/* Sources (non-query tabs only) - structured cards */}
         {activeTab !== "query" && sources.length > 0 && (
           <div className="space-y-4">
-            <h2 className="text-sm font-semibold uppercase tracking-wider text-gray-400">
-              Sources ({sources.length})
-            </h2>
+            <p className="text-xs text-gray-400 mb-2">SOURCES ({sources.length})</p>
             {sources.map((s, i) => (
               <div
                 key={i}
@@ -552,8 +559,8 @@ export default function Home() {
                   {s.score != null && (
                     <span
                       className={`shrink-0 px-2 py-0.5 rounded-full font-medium ${
-                        s.score >= 80 ? "bg-green-900 text-green-300" :
-                        s.score >= 50 ? "bg-yellow-900 text-yellow-300" :
+                        s.score >= 55 ? "bg-green-900 text-green-300" :
+                        s.score >= 40 ? "bg-yellow-900 text-yellow-300" :
                         "bg-red-900 text-red-300"
                       }`}
                     >
