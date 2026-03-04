@@ -33,3 +33,6 @@ build/
 # Audit / demo artifacts
 DEMO_SCRIPT.md
 AUDIT_REPORT.md
+
+# Test output
+golden_results.json
