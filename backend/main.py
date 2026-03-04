@@ -49,12 +49,12 @@ except Exception:
     }
 
 # RAG accuracy constants
-SNIPPET_MAX_CHARS = 60
-CONTEXT_MAX_TOKENS = 1200
+SNIPPET_MAX_CHARS = 80
+CONTEXT_MAX_TOKENS = 1500
 TOP_K = 2
 TOP_K_BROAD = 8  # for summary/overview queries
 TOP_K_DEPS = 3  # for dependencies (reduced for latency)
-MAX_TOKENS = 175  # reduced for latency while keeping TOP_K=2
+MAX_TOKENS = 200  # reduced for latency while keeping TOP_K=2
 
 BROAD_QUERY_KEYWORDS = ("summary", "overview", "summarize", "describe the codebase", "what does this program do", "high level")
 
