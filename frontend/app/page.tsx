@@ -209,11 +209,11 @@ export default function Home() {
     }
   }, [activeTab, apiUrl]);
 
-  // Keep Railway backend warm by pinging every 4 minutes
+  // Keep Railway backend warm by pinging every 2 minutes
   useEffect(() => {
     const keepAlive = setInterval(() => {
       fetch(`${apiUrl}/health`).catch(() => {});
-    }, 4 * 60 * 1000); // 4 minutes
+    }, 2 * 60 * 1000); // ping every 2 minutes
 
     // Also ping immediately on page load
     fetch(`${apiUrl}/health`).catch(() => {});
