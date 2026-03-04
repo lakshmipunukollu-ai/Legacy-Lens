@@ -62,7 +62,7 @@ BROAD_QUERY_KEYWORDS = ("summary", "overview", "summarize", "describe the codeba
 MARKDOWN_FORMAT = " Format your response using markdown. Use bold for important terms, bullet points for lists, and ### headers for sections."
 SYSTEM_PROMPT_QUERY = """COBOL expert. Answer ONLY from provided context. Cite file names and line numbers. If the context contains OPEN, READ, WRITE, CLOSE, FAIL-ROUTINE, BAIL-OUT, or similar—that IS the answer; present it directly. Only say "I couldn't find" when the chunks are truly irrelevant (e.g., no file ops when asked about I/O). When context is relevant, answer confidently with specifics. Keep responses under 4 sentences. If the exact item is not found, describe the most relevant related code you did find and explain why the specific item may not be in the retrieved context.""" + MARKDOWN_FORMAT
 SYSTEM_PROMPT_DEPS = """COBOL expert. Extract PERFORM call relationships. Return JSON array: [{{"caller":"X","callee":"Y","file":"...","line":N}}]. Use only provided code. If none: []."""
-SYSTEM_PROMPT_DOC = """You are a COBOL expert. Write technical documentation for the provided code in 3 sentences maximum. Include: what it does, what data it uses, and what calls it.""" + MARKDOWN_FORMAT
+SYSTEM_PROMPT_DOC = """You are a COBOL expert. Write 2 sentences of technical documentation: what this code does and what data it uses."""
 SYSTEM_PROMPT_BUSINESS_LOGIC = """You are a COBOL expert. Analyze the code and respond in exactly this format with no extra text:
 Business Rule: [one sentence]
 Details: [one sentence]
@@ -169,24 +169,22 @@ ERROR_HANDLING_KEYWORDS = ("error handling", "error patterns", "fail routine", "
 ERROR_HANDLING_SEARCH_BOOST = " FAIL-ROUTINE BAIL-OUT ERROR EXCEPTION"
 
 
-async def enhance_query_with_history(question: str, history: list) -> str:
-    """If question is vague (short, contains 'that', 'it', 'this'),
-    use history to make it specific for Pinecone search."""
-    vague_indicators = ["that", "it", "this", "there", "those", "they", "same", "above"]
-    is_vague = len(question.split()) < 8 and any(w in question.lower() for w in vague_indicators)
-
-    if not is_vague or not history:
+def enhance_query_with_history(question: str, history: list) -> str:
+    if not history:
         return question
 
-    # Get last assistant answer for context
-    last_answers = [h.get("content", "") for h in history if h.get("role") == "assistant"]
+    # Only enhance if under 6 words (vague/short)
+    if len(question.split()) >= 6:
+        return question
+
+    # Extract nouns from last assistant message
+    last_answers = [h["content"] for h in history if h.get("role") == "assistant"]
     if not last_answers:
         return question
 
-    # Extract key terms from last answer to enhance the query
-    last_answer = last_answers[-1][:200]  # First 200 chars
-    enhanced = f"{question} (context: {last_answer[:100]})"
-    return enhanced
+    # Take first 150 chars of last answer as context
+    context = last_answers[-1][:150].strip()
+    return f"{question} {context}"
 
 
 @app.post("/query", response_model=QueryResponse)
@@ -196,13 +194,14 @@ async def query(request: QueryRequest):
     is_entry_point_query = any(kw in q_lower for kw in ENTRY_POINT_KEYWORDS)
     is_broad_query = any(kw in q_lower for kw in BROAD_QUERY_KEYWORDS)
     broad_append = " Synthesize a concise summary from the provided chunks. Cite key files and paragraphs." if is_broad_query else ""
-    file_io_append = " List findings as brief bullet points only. Maximum 5 bullets." if ("file i/o" in q_lower or "file io" in q_lower or "operations" in q_lower or "error handling patterns" in q_lower) else ""
+    BULLET_TRIGGERS = ["file i/o", "file io", "operations", "error handling patterns", "show me error", "find all"]
+    file_io_append = " List findings as brief bullet points only. Maximum 5 bullets." if any(t in q_lower for t in BULLET_TRIGGERS) else ""
     system_prompt = SYSTEM_PROMPT_QUERY + (ENTRY_POINT_APPEND if is_entry_point_query else "") + broad_append + file_io_append
 
     vectorstore = get_vectorstore()
     k = TOP_K_BROAD if is_broad_query else TOP_K
     # Enhance vague queries using conversation history (for Pinecone search only)
-    search_query = await enhance_query_with_history(request.question, request.history or [])
+    search_query = enhance_query_with_history(request.question, request.history or [])
     if is_entry_point_query:
         search_query += ENTRY_POINT_SEARCH_BOOST
     elif any(kw in q_lower for kw in FILE_IO_KEYWORDS):
@@ -623,7 +622,7 @@ async def generate_documentation(body: DocumentRequest):
         ("system", SYSTEM_PROMPT_DOC),
         ("human", "Code:\n{context}\n\nWrite technical documentation:"),
     ])
-    llm = ChatOpenAI(model="gpt-4o-mini", temperature=0, max_tokens=100)
+    llm = ChatOpenAI(model="gpt-4o-mini", temperature=0, max_tokens=75)
     chain = prompt | llm | StrOutputParser()
     documentation = chain.invoke({"context": context})
     sources = [

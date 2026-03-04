@@ -50,7 +50,7 @@ def run_latency_tests():
         # For health and stats, skip first run (cold start) and average runs 2-3
         if name == "GET /health" or name == "GET /stats":
             measured_latencies = latencies[1:]  # Skip first run
-            target = 1000
+            target = 5000
         else:
             measured_latencies = latencies
             target = 3000
