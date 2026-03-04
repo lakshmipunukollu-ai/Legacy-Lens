@@ -559,25 +559,33 @@ export default function Home() {
                             📊 Top Files by Complexity
                           </h3>
                           <div className="space-y-3">
-                            {d.top_files.map((f) => (
-                              <div key={f.file} className="flex items-center gap-3">
-                                <div className="min-w-0 flex-1">
-                                  <div className="truncate text-sm text-gray-300">{f.file}</div>
-                                  <div className="flex items-center gap-2">
-                                    <div className="h-2 flex-1 overflow-hidden rounded bg-gray-700">
+                            {d.top_files.map((f) => {
+                              const barWidthPct = Math.min(80, (f.loc / maxLoc) * 80);
+                              return (
+                                <div key={f.file} className="flex items-center gap-3">
+                                  <div className="min-w-0 flex-1">
+                                    <div className="flex items-center justify-between gap-2">
+                                      <span className="truncate text-sm text-gray-300">{f.file}</span>
+                                      <span className="shrink-0 text-xs text-gray-500">
+                                        {f.loc.toLocaleString()} LOC
+                                      </span>
+                                    </div>
+                                    <div className="mt-1 h-2 overflow-hidden rounded bg-gray-700">
                                       <div
                                         className="h-full rounded bg-emerald-600"
-                                        style={{ width: `${(f.loc / maxLoc) * 100}%` }}
+                                        style={{ width: `${barWidthPct}%` }}
                                       />
                                     </div>
-                                    <span className="shrink-0 text-xs text-gray-500">
-                                      {f.loc.toLocaleString()} loc
-                                    </span>
                                   </div>
                                 </div>
-                              </div>
-                            ))}
+                              );
+                            })}
                           </div>
+                          {d.top_files.length > 0 && d.total_loc > 0 && d.top_files[0].loc / d.total_loc > 0.5 && (
+                            <p className="mt-3 text-xs text-amber-500">
+                              * {d.top_files[0].file} contains {Math.round((d.top_files[0].loc / d.total_loc) * 100)}% of total LOC
+                            </p>
+                          )}
                         </div>
                         <div className="rounded-xl bg-gray-800 p-6">
                           <h3 className="mb-4 font-semibold text-gray-200">

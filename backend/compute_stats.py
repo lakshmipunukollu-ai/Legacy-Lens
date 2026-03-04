@@ -58,6 +58,13 @@ def compute_stats():
     if perform_density > 50: health_score -= 10
     if error_ratio < 0.1: health_score -= 15
     if error_ratio > 0.3: health_score += 5
+
+    # Check if one file dominates
+    if files:
+        max_file_loc = files[0]["loc"]
+        if max_file_loc / total_loc > 0.5:
+            health_score -= 20
+
     health_score = max(0, min(100, health_score))
 
     # Build health notes based on real data
@@ -70,6 +77,8 @@ def compute_stats():
         health_notes.append("Low error handling coverage — less than 10% of PERFORMs have error handling")
     if len(files) > 400:
         health_notes.append(f"Large codebase ({len(files)} files) — consider modularization")
+    if files and files[0]["loc"] / total_loc > 0.5:
+        health_notes.append(f"Critical: {files[0]['file']} contains {files[0]['loc']/total_loc*100:.0f}% of all LOC — extreme concentration risk")
     if not health_notes:
         health_notes.append("Codebase structure looks reasonable")
 
