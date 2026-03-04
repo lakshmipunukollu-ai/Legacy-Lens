@@ -1,0 +1,94 @@
+{
+  "computed_at": "2026-03-04T13:28:08.572786",
+  "total_files": 433,
+  "total_loc": 355273,
+  "avg_loc_per_file": 820.5,
+  "top_files": [
+    {
+      "file": "nist85.cbl",
+      "loc": 348272,
+      "chunks": 6965
+    },
+    {
+      "file": "RL101A.CBL",
+      "loc": 459,
+      "chunks": 9
+    },
+    {
+      "file": "SectionShouldNotHaveTooManyStatements.cbl",
+      "loc": 171,
+      "chunks": 3
+    },
+    {
+      "file": "test-exp.cbl",
+      "loc": 126,
+      "chunks": 2
+    },
+    {
+      "file": "ProgrammHasTooManyStatements.cbl",
+      "loc": 123,
+      "chunks": 2
+    },
+    {
+      "file": "NumberOfPerformStatementsShouldBeLimited.cbl",
+      "loc": 119,
+      "chunks": 2
+    },
+    {
+      "file": "interpreter-test.cbl",
+      "loc": 114,
+      "chunks": 2
+    },
+    {
+      "file": "minimum.cbl",
+      "loc": 94,
+      "chunks": 1
+    },
+    {
+      "file": "flowgraph-idms.cbl",
+      "loc": 88,
+      "chunks": 1
+    },
+    {
+      "file": "ReadWriteStatement.cbl",
+      "loc": 76,
+      "chunks": 1
+    }
+  ],
+  "patterns_summary": [
+    {
+      "pattern": "File I/O Operations",
+      "count": 7518
+    },
+    {
+      "pattern": "Error Handling",
+      "count": 2977
+    },
+    {
+      "pattern": "PERFORM Statements",
+      "count": 47193
+    },
+    {
+      "pattern": "Data Division",
+      "count": 1565
+    },
+    {
+      "pattern": "MOVE Statements",
+      "count": 79633
+    }
+  ],
+  "health_score": 60,
+  "health_notes": [
+    "High average file size (820 LOC/file) \u2014 refactoring recommended",
+    "High PERFORM density (109/file) \u2014 deep call chains detected",
+    "Low error handling coverage \u2014 less than 10% of PERFORMs have error handling",
+    "Large codebase (433 files) \u2014 consider modularization"
+  ],
+  "languages": [
+    {
+      "name": "COBOL",
+      "files": 433,
+      "percentage": 100
+    }
+  ]
+}

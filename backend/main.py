@@ -34,6 +34,23 @@ app.add_middleware(
 
 conversation_history: dict = defaultdict(list)
 
+# Load codebase stats at startup
+STATS_FILE = Path(__file__).parent / "codebase_stats.json"
+try:
+    with open(STATS_FILE) as f:
+        CODEBASE_STATS = json.load(f)
+    print(f"Loaded codebase stats: {CODEBASE_STATS['total_files']} files, {CODEBASE_STATS['total_loc']:,} LOC")
+except Exception:
+    CODEBASE_STATS = {
+        "total_files": 433,
+        "total_loc": 354916,
+        "top_files": [],
+        "patterns_summary": [],
+        "health_score": 72,
+        "health_notes": ["Stats file not found — using fallback values"],
+        "languages": [{"name": "COBOL", "files": 433, "percentage": 100}],
+    }
+
 # RAG accuracy constants
 SNIPPET_MAX_CHARS = 400
 CONTEXT_MAX_TOKENS = 2000
@@ -373,10 +390,6 @@ async def health_dashboard():
     """Return stats about the indexed codebase for the health dashboard."""
     start_time = time.time()
     total_chunks = 0
-    total_files = 0
-    total_loc = 0
-    top_files = []
-    patterns_summary = []
 
     index, index_name = _get_pinecone_index()
     if index is not None:
@@ -386,43 +399,17 @@ async def health_dashboard():
         except Exception:
             pass
 
-    total_files, total_loc, top_files, patterns_summary = _compute_codebase_stats()
-
-    if not top_files:
-        top_files = [
-            {"file": "nist85.cbl", "chunks": 847, "loc": 25000},
-            {"file": "fileio.c", "chunks": 312, "loc": 8500},
-            {"file": "common.h", "chunks": 201, "loc": 5200},
-            {"file": "cobc.h", "chunks": 189, "loc": 4800},
-            {"file": "typeck.c", "chunks": 156, "loc": 4100},
-        ]
-    if not patterns_summary:
-        patterns_summary = [
-            {"pattern": "File I/O Operations", "count": 2847},
-            {"pattern": "Error Handling", "count": 1203},
-            {"pattern": "PERFORM Statements", "count": 3412},
-            {"pattern": "Data Division", "count": 891},
-            {"pattern": "MOVE Statements", "count": 4521},
-        ]
-
-    languages = [{"name": "COBOL", "files": total_files or 433, "percentage": 100}]
-    health_score = min(100, max(0, 50 + (total_chunks // 200) + (total_files // 10)))
-    health_notes = [
-        "Large codebase with complex paragraph dependencies",
-        "High PERFORM statement density indicates deep call chains",
-        "Error handling present but inconsistent across files",
-    ]
-
     latency_ms = round((time.time() - start_time) * 1000)
     return {
         "total_chunks": total_chunks,
-        "total_files": total_files or 433,
-        "total_loc": total_loc or 354916,
-        "top_files": top_files[:5],
-        "languages": languages,
-        "patterns_summary": patterns_summary[:5],
-        "health_score": health_score,
-        "health_notes": health_notes,
+        "total_files": CODEBASE_STATS["total_files"],
+        "total_loc": CODEBASE_STATS["total_loc"],
+        "top_files": CODEBASE_STATS.get("top_files", [])[:5],
+        "languages": CODEBASE_STATS.get("languages", [{"name": "COBOL", "files": CODEBASE_STATS["total_files"], "percentage": 100}]),
+        "patterns_summary": CODEBASE_STATS.get("patterns_summary", [])[:5],
+        "health_score": CODEBASE_STATS.get("health_score", 72),
+        "health_notes": CODEBASE_STATS.get("health_notes", []),
+        "computed_at": CODEBASE_STATS.get("computed_at", "unknown"),
         "latency_ms": latency_ms,
     }
 

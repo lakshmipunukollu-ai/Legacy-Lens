@@ -12,12 +12,13 @@ type HealthDashboardData = {
   total_chunks: number;
   total_files: number;
   total_loc: number;
-  top_files: { file: string; chunks: number; loc: number }[];
+  top_files: { file: string; chunks?: number; loc: number }[];
   languages: { name: string; files: number; percentage: number }[];
   patterns_summary: { pattern: string; count: number }[];
   health_score: number;
   health_notes: string[];
   latency_ms?: number;
+  computed_at?: string;
 };
 
 type SourceItem = {
@@ -33,11 +34,11 @@ type SourceItem = {
 
 const TABS: { id: TabId; label: string }[] = [
   { id: "dashboard", label: "🏥 Dashboard" },
-  { id: "query", label: "🔍 Ask a Question" },
+  { id: "query", label: "🔍 Ask" },
   { id: "dependencies", label: "🔗 Dependencies" },
-  { id: "document", label: "📄 Documentation" },
+  { id: "document", label: "📄 Docs" },
   { id: "patterns", label: "🔎 Patterns" },
-  { id: "explain-snippet", label: "🔬 Explain Snippet" },
+  { id: "explain-snippet", label: "🔬 Snippet" },
   { id: "business-logic", label: "💼 Business Logic" },
 ];
 
@@ -495,30 +496,37 @@ export default function Home() {
                 {(() => {
                   const d = dashboardData || FALLBACK_DASHBOARD;
                   const maxLoc = Math.max(...d.top_files.map((f) => f.loc), 1);
-                  const maxPattern = Math.max(...d.patterns_summary.map((p) => p.count), 1);
                   return (
                     <>
                       {/* Row 1 — 3 stat cards */}
                       <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
                         <div className="rounded-xl bg-gray-800 p-6">
-                          <div className="text-2xl font-bold text-gray-100">
+                          <div className="text-3xl">📁</div>
+                          <div className="mt-1 text-2xl font-bold text-gray-100">
                             {d.total_files.toLocaleString()}
                           </div>
-                          <div className="mt-1 text-sm text-gray-400">📁 Total Files</div>
+                          <div className="mt-1 text-sm text-gray-400">Total Files</div>
                         </div>
                         <div className="rounded-xl bg-gray-800 p-6">
-                          <div className="text-2xl font-bold text-gray-100">
+                          <div className="text-3xl">📝</div>
+                          <div className="mt-1 text-2xl font-bold text-gray-100">
                             {d.total_loc.toLocaleString()}
                           </div>
-                          <div className="mt-1 text-sm text-gray-400">📝 Lines of Code</div>
+                          <div className="mt-1 text-sm text-gray-400">Lines of Code</div>
                         </div>
                         <div className="rounded-xl bg-gray-800 p-6">
-                          <div className="text-2xl font-bold text-gray-100">
+                          <div className="text-3xl">🧩</div>
+                          <div className="mt-1 text-2xl font-bold text-gray-100">
                             {d.total_chunks.toLocaleString()}
                           </div>
-                          <div className="mt-1 text-sm text-gray-400">🧩 Indexed Chunks</div>
+                          <div className="mt-1 text-sm text-gray-400">Indexed Chunks</div>
                         </div>
                       </div>
+                      {d.computed_at && (
+                        <p className="mt-2 text-center text-xs text-gray-500">
+                          Last computed: {new Date(d.computed_at).toLocaleString()}
+                        </p>
+                      )}
 
                       {/* Row 2 — Health Score */}
                       <div className="rounded-xl bg-gray-800 p-6">
@@ -527,7 +535,13 @@ export default function Home() {
                         </h2>
                         <div className="mb-4 h-3 overflow-hidden rounded-full bg-gray-700">
                           <div
-                            className="h-full rounded-full bg-green-500 transition-all"
+                            className={`h-full rounded-full transition-all ${
+                              d.health_score >= 80
+                                ? "bg-green-500"
+                                : d.health_score >= 60
+                                  ? "bg-yellow-500"
+                                  : "bg-red-500"
+                            }`}
                             style={{ width: `${d.health_score}%` }}
                           />
                         </div>
@@ -570,25 +584,28 @@ export default function Home() {
                             🔍 Pattern Distribution
                           </h3>
                           <div className="space-y-3">
-                            {d.patterns_summary.map((p) => (
-                              <div key={p.pattern} className="flex items-center gap-3">
-                                <div className="min-w-0 flex-1">
-                                  <div className="flex justify-between text-sm">
-                                    <span className="text-gray-300">{p.pattern}</span>
-                                    <span className="text-gray-500">
-                                      {p.count.toLocaleString()} (
-                                      {((p.count / maxPattern) * 100).toFixed(0)}%)
-                                    </span>
-                                  </div>
-                                  <div className="mt-1 h-2 overflow-hidden rounded bg-gray-700">
-                                    <div
-                                      className="h-full rounded bg-blue-600"
-                                      style={{ width: `${(p.count / maxPattern) * 100}%` }}
-                                    />
+                            {d.patterns_summary.map((p) => {
+                              const maxCount = Math.max(...d.patterns_summary.map((x) => x.count), 1);
+                              const percentage = Math.round((p.count / maxCount) * 100);
+                              return (
+                                <div key={p.pattern} className="flex items-center gap-3">
+                                  <div className="min-w-0 flex-1">
+                                    <div className="flex justify-between text-sm">
+                                      <span className="text-gray-300">{p.pattern}</span>
+                                      <span className="text-gray-500">
+                                        {p.count.toLocaleString()} ({percentage}%)
+                                      </span>
+                                    </div>
+                                    <div className="mt-1 h-2 overflow-hidden rounded bg-gray-700">
+                                      <div
+                                        className="h-full rounded bg-blue-600"
+                                        style={{ width: `${percentage}%` }}
+                                      />
+                                    </div>
                                   </div>
                                 </div>
-                              </div>
-                            ))}
+                              );
+                            })}
                           </div>
                         </div>
                       </div>
