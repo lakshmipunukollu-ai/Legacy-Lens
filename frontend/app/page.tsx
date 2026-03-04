@@ -1,7 +1,8 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import SyntaxHighlighter from "react-syntax-highlighter";
+import DependencyGraph from "./DependencyGraph";
 import { vscDarkPlus } from "react-syntax-highlighter/dist/esm/styles/prism";
 
 type TabId = "dashboard" | "query" | "dependencies" | "document" | "patterns" | "business-logic";
@@ -47,6 +48,7 @@ const EXAMPLE_QUERIES: Record<TabId, string[]> = {
     "What does the PROCEDURE DIVISION do?",
   ],
   dependencies: [
+    "What are all the PERFORM relationships in the main procedure?",
     "What does MAIN-SECTION call?",
     "What calls the STOP-RUN paragraph?",
     "Show the call graph for this program",
@@ -122,6 +124,10 @@ export default function Home() {
   const [answer, setAnswer] = useState("");
   const [sources, setSources] = useState<SourceItem[]>([]);
   const [callGraph, setCallGraph] = useState<{ caller: string; callee: string; file: string; line: number }[]>([]);
+  const [depsGraph, setDepsGraph] = useState<{ nodes: { id: string; type: string; file: string }[]; edges: { source: string; target: string; type: string }[] }>({ nodes: [], edges: [] });
+  const [depsViewMode, setDepsViewMode] = useState<"list" | "graph">("list");
+  const [selectedNodeAnswer, setSelectedNodeAnswer] = useState<string | null>(null);
+  const [selectedNodeLoading, setSelectedNodeLoading] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [latencyMs, setLatencyMs] = useState<number | null>(null);
@@ -149,6 +155,31 @@ export default function Home() {
   const askedQuestions = new Set(chatHistory.filter((m) => m.role === "user").map((m) => m.content.trim().toLowerCase()));
   const suggestedQueries = EXAMPLE_QUERIES[activeTab].filter(
     (q) => !askedQuestions.has(q.trim().toLowerCase())
+  );
+
+  const handleDepsNodeClick = useCallback(
+    async (nodeName: string) => {
+      setSelectedNodeLoading(true);
+      setSelectedNodeAnswer(null);
+      try {
+        const res = await fetch(`${apiUrl}/query`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            question: `Explain the ${nodeName} paragraph`,
+            session_id: "deps-graph",
+          }),
+        });
+        if (!res.ok) throw new Error("Query failed");
+        const data = await res.json();
+        setSelectedNodeAnswer(data.answer);
+      } catch {
+        setSelectedNodeAnswer("Failed to load explanation.");
+      } finally {
+        setSelectedNodeLoading(false);
+      }
+    },
+    [apiUrl]
   );
 
   const formatLineRange = (start: number, end: number) => {
@@ -254,7 +285,9 @@ export default function Home() {
         setAnswer(data.answer);
         setSources(data.sources || []);
         setCallGraph(data.call_graph || []);
+        setDepsGraph(data.graph || { nodes: [], edges: [] });
         setLatencyMs(data.latency_ms ?? null);
+        setSelectedNodeAnswer(null);
       } else if (activeTab === "document") {
         const res = await fetch(`${apiUrl}/document`, {
           method: "POST",
@@ -693,19 +726,76 @@ export default function Home() {
           </div>
         )}
 
-        {/* Call graph (dependencies tab only) */}
-        {activeTab === "dependencies" && callGraph.length > 0 && (
-          <div className="mb-8 rounded-lg border border-gray-800 bg-gray-900/50 p-6">
-            <h2 className="mb-3 text-sm font-semibold uppercase tracking-wider text-gray-400">
-              Call Graph
-            </h2>
-            <div className="space-y-1 font-mono text-sm text-gray-300">
-              {callGraph.map((cg, i) => (
-                <div key={i}>
-                  {cg.caller} → {cg.callee} ({cg.file}:{cg.line})
-                </div>
-              ))}
+        {/* Dependencies tab: List or Graph view */}
+        {activeTab === "dependencies" && (answer || callGraph.length > 0 || depsGraph.nodes.length > 0) && (
+          <div className="mb-8 space-y-4">
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setDepsViewMode("list")}
+                className={`rounded px-3 py-1.5 text-sm ${
+                  depsViewMode === "list"
+                    ? "bg-gray-700 text-white"
+                    : "bg-gray-800 text-gray-400 hover:text-gray-200"
+                }`}
+              >
+                📋 List View
+              </button>
+              <button
+                onClick={() => setDepsViewMode("graph")}
+                className={`rounded px-3 py-1.5 text-sm ${
+                  depsViewMode === "graph"
+                    ? "bg-gray-700 text-white"
+                    : "bg-gray-800 text-gray-400 hover:text-gray-200"
+                }`}
+              >
+                🕸 Graph View
+              </button>
             </div>
+
+            {depsViewMode === "list" ? (
+              <>
+                {callGraph.length > 0 && (
+                  <div className="rounded-lg border border-gray-800 bg-gray-900/50 p-6">
+                    <h2 className="mb-3 text-sm font-semibold uppercase tracking-wider text-gray-400">
+                      Call Graph
+                    </h2>
+                    <div className="space-y-1 font-mono text-sm text-gray-300">
+                      {callGraph.map((cg, i) => (
+                        <div key={i}>
+                          {cg.caller} → {cg.callee} ({cg.file}:{cg.line})
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </>
+            ) : (
+              <div className="rounded-lg border border-gray-800 bg-gray-900 p-4">
+                <DependencyGraph
+                  nodes={depsGraph.nodes}
+                  edges={depsGraph.edges}
+                  onNodeClick={handleDepsNodeClick}
+                  width={800}
+                  height={600}
+                />
+                {selectedNodeLoading && (
+                  <div className="mt-4 flex items-center gap-2 text-sm text-gray-400">
+                    <div className="h-4 w-4 animate-spin rounded-full border-2 border-emerald-500 border-t-transparent" />
+                    Loading explanation...
+                  </div>
+                )}
+                {selectedNodeAnswer && !selectedNodeLoading && (
+                  <div className="mt-4 rounded-lg border border-gray-700 bg-gray-800/50 p-4">
+                    <h3 className="mb-2 text-sm font-semibold text-gray-300">
+                      Paragraph explanation
+                    </h3>
+                    <div className="whitespace-pre-wrap text-sm text-gray-200">
+                      {selectedNodeAnswer}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         )}
 

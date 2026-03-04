@@ -5,6 +5,7 @@ FastAPI server with RAG endpoint for COBOL codebase queries.
 
 import json
 import os
+import re
 import time
 from collections import defaultdict
 from pathlib import Path
@@ -441,6 +442,7 @@ async def get_file(path: str = ""):
 class DependenciesResponse(BaseModel):
     answer: str
     call_graph: list[dict]  # [{ "caller": "PARA-A", "callee": "PARA-B", "file": "...", "line": N }]
+    graph: dict  # { "nodes": [...], "edges": [...] }
     sources: list[SourceItem]
     latency_ms: int
 
@@ -452,11 +454,17 @@ async def dependencies(request: QueryRequest):
     vectorstore = get_vectorstore()
     doc_scores = vectorstore.similarity_search_with_score(
         "PERFORM statement calling paragraph or section " + (request.question or "dependencies"),
-        k=TOP_K,
+        k=TOP_K_BROAD,
     )
     if not doc_scores:
         latency_ms = round((time.time() - start_time) * 1000)
-        return DependenciesResponse(answer="No PERFORM/call patterns found.", call_graph=[], sources=[], latency_ms=latency_ms)
+        return DependenciesResponse(
+            answer="No PERFORM/call patterns found.",
+            call_graph=[],
+            graph={"nodes": [], "edges": []},
+            sources=[],
+            latency_ms=latency_ms,
+        )
 
     docs = [d for d, _ in doc_scores]
     scores = [_distance_to_score(s) for _, s in doc_scores]
@@ -478,6 +486,44 @@ async def dependencies(request: QueryRequest):
             call_graph = json.loads(raw[start:end])
     except Exception:
         pass
+
+    # Fallback: parse raw text for "X calls Y" or "X performs Y" when call_graph is empty
+    if not call_graph:
+        for m in re.finditer(
+            r"(\w+(?:-\w+)*)\s+(?:calls|performs)\s+(\w+(?:-\w+)*)",
+            raw,
+            re.IGNORECASE,
+        ):
+            caller, callee = m.group(1).strip(), m.group(2).strip()
+            if caller and callee and caller != callee:
+                call_graph.append({"caller": caller, "callee": callee, "file": "unknown", "line": 0})
+
+    nodes_by_id: dict[str, dict] = {}
+    edges: list[dict] = []
+    for item in call_graph:
+        if not isinstance(item, dict):
+            continue
+        caller = str(item.get("caller", "")).strip()
+        callee = str(item.get("callee", "")).strip()
+        file_name = str(item.get("file", "unknown"))
+        if not caller or not callee:
+            continue
+        if caller not in nodes_by_id:
+            nodes_by_id[caller] = {"id": caller, "type": "paragraph", "file": file_name}
+        if callee not in nodes_by_id:
+            nodes_by_id[callee] = {"id": callee, "type": "paragraph", "file": file_name}
+        edges.append({"source": caller, "target": callee, "type": "calls"})
+
+    # Add nodes from doc metadata when we have docs but no nodes yet (so graph shows retrieved paragraphs)
+    if not nodes_by_id and docs:
+        for d in docs:
+            para = (d.metadata.get("paragraph") or "").strip()
+            if para:
+                fname = d.metadata.get("file_name", "unknown")
+                nodes_by_id[para] = {"id": para, "type": "paragraph", "file": fname}
+
+    graph = {"nodes": list(nodes_by_id.values()), "edges": edges}
+
     answer = f"Found {len(docs)} chunk(s) related to PERFORM/calls. Extracted {len(call_graph)} call relationship(s)."
     sources = [
         SourceItem(
@@ -493,7 +539,13 @@ async def dependencies(request: QueryRequest):
         for i, d in enumerate(docs)
     ]
     latency_ms = round((time.time() - start_time) * 1000)
-    return DependenciesResponse(answer=answer, call_graph=call_graph, sources=sources, latency_ms=latency_ms)
+    return DependenciesResponse(
+        answer=answer,
+        call_graph=call_graph,
+        graph=graph,
+        sources=sources,
+        latency_ms=latency_ms,
+    )
 
 
 class DocumentRequest(BaseModel):
