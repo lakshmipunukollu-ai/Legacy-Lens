@@ -189,6 +189,7 @@ export default function Home() {
   const [expandedFile, setExpandedFile] = useState<{ path: string; content: string; line_count: number } | null>(null);
   const [expandedSourceIdx, setExpandedSourceIdx] = useState<number | null>(null);
   const [expandedSourcesForMessage, setExpandedSourcesForMessage] = useState<number | null>(null);
+  const [sourcesOpen, setSourcesOpen] = useState(false);
   const [expandedChatSource, setExpandedChatSource] = useState<{ messageIdx: number; sourceIdx: number } | null>(null);
   const [expandedMessageIdx, setExpandedMessageIdx] = useState<number | null>(null);
   const [dashboardData, setDashboardData] = useState<HealthDashboardData | null>(null);
@@ -299,6 +300,7 @@ export default function Home() {
       setSources([]);
       setCallGraph([]);
       setLatencyMs(null);
+      setSourcesOpen(false);
     }
     setExpandedFile(null);
     setExpandedSourceIdx(null);
@@ -529,11 +531,11 @@ export default function Home() {
                             style={{ width: `${d.health_score}%` }}
                           />
                         </div>
-                        <ul className="space-y-1 text-sm text-gray-400">
-                          {d.health_notes.map((note, i) => (
-                            <li key={i}>• {note}</li>
-                          ))}
-                        </ul>
+                        <div className="prose prose-invert prose-sm max-w-none text-gray-400">
+                          <ReactMarkdown>
+                            {d.health_notes.map((n) => `- ${n}`).join("\n")}
+                          </ReactMarkdown>
+                        </div>
                       </div>
 
                       {/* Row 3 — Two columns */}
@@ -643,7 +645,7 @@ export default function Home() {
                         📥 Export
                       </button>
                     )}
-                    <div className="prose prose-invert prose-sm max-w-none">
+                    <div className="prose prose-invert prose-sm max-w-none text-gray-300">
                       <ReactMarkdown>{displayContent}</ReactMarkdown>
                     </div>
                     {showExpand && (
@@ -665,11 +667,11 @@ export default function Home() {
                               expandedSourcesForMessage === msgIdx ? null : msgIdx
                             )
                           }
-                          className="text-xs text-emerald-400 hover:text-emerald-300"
+                          className="mt-2 cursor-pointer text-xs text-gray-500 hover:text-gray-300"
                         >
                           {expandedSourcesForMessage === msgIdx
-                            ? "Hide sources ▲"
-                            : `Show ${msg.sources.length} source${msg.sources.length === 1 ? "" : "s"} ▼`}
+                            ? `▼ ${msg.sources.length} source${msg.sources.length !== 1 ? "s" : ""} retrieved · click to collapse`
+                            : `▶ ${msg.sources.length} source${msg.sources.length !== 1 ? "s" : ""} retrieved · click to expand`}
                         </button>
                         {expandedSourcesForMessage === msgIdx && (
                           <div className="mt-3 space-y-2">
@@ -850,7 +852,7 @@ export default function Home() {
                 </div>
               ) : snippetExplanation ? (
                 <>
-                  <div className="prose prose-invert prose-sm max-w-none text-gray-200">
+                  <div className="prose prose-invert prose-sm max-w-none text-gray-300">
                     <ReactMarkdown>{snippetExplanation}</ReactMarkdown>
                   </div>
                   {snippetLatencyMs != null && (
@@ -971,7 +973,7 @@ export default function Home() {
                         📥 Export
                       </button>
                     </div>
-                    <div className="prose prose-invert prose-sm max-w-none text-sm text-gray-200">
+                    <div className="prose prose-invert prose-sm max-w-none text-sm text-gray-300">
                       <ReactMarkdown>{selectedNodeAnswer}</ReactMarkdown>
                     </div>
                   </div>
@@ -1002,7 +1004,7 @@ export default function Home() {
                 📥 Export
               </button>
             </div>
-            <div className="prose prose-invert prose-sm max-w-none text-gray-200">
+            <div className="prose prose-invert prose-sm max-w-none text-gray-300">
               <ReactMarkdown>{answer}</ReactMarkdown>
             </div>
             {latencyMs != null && (
@@ -1013,11 +1015,18 @@ export default function Home() {
           </div>
         )}
 
-        {/* Sources (non-query tabs only) - structured cards */}
+        {/* Sources (non-query tabs only) - accordion */}
         {activeTab !== "query" && activeTab !== "explain-snippet" && sources.length > 0 && (
           <div className="space-y-4">
-            <p className="text-xs text-gray-400 mb-2">SOURCES ({sources.length})</p>
-            {sources.map((s, i) => (
+            <button
+              onClick={() => setSourcesOpen(!sourcesOpen)}
+              className="mt-2 cursor-pointer text-xs text-gray-500 hover:text-gray-300"
+            >
+              {sourcesOpen
+                ? `▼ ${sources.length} source${sources.length !== 1 ? "s" : ""} retrieved · click to collapse`
+                : `▶ ${sources.length} source${sources.length !== 1 ? "s" : ""} retrieved · click to expand`}
+            </button>
+            {sourcesOpen && sources.map((s, i) => (
               <div
                 key={i}
                 className="rounded-lg border border-gray-700 bg-gray-900/80 p-3"

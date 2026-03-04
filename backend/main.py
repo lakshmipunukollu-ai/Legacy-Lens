@@ -44,14 +44,15 @@ MAX_TOKENS = 300
 BROAD_QUERY_KEYWORDS = ("summary", "overview", "summarize", "describe the codebase", "what does this program do", "high level")
 
 # Short system prompts (under 100 words each)
-SYSTEM_PROMPT_QUERY = """COBOL expert. Answer ONLY from provided context. Cite file names and line numbers. If the context contains OPEN, READ, WRITE, CLOSE, FAIL-ROUTINE, BAIL-OUT, or similar—that IS the answer; present it directly. Only say "I couldn't find" when the chunks are truly irrelevant (e.g., no file ops when asked about I/O). When context is relevant, answer confidently with specifics. Keep responses under 4 sentences."""
+MARKDOWN_FORMAT = " Format your response using markdown. Use bold for important terms, bullet points for lists, and ### headers for sections."
+SYSTEM_PROMPT_QUERY = """COBOL expert. Answer ONLY from provided context. Cite file names and line numbers. If the context contains OPEN, READ, WRITE, CLOSE, FAIL-ROUTINE, BAIL-OUT, or similar—that IS the answer; present it directly. Only say "I couldn't find" when the chunks are truly irrelevant (e.g., no file ops when asked about I/O). When context is relevant, answer confidently with specifics. Keep responses under 4 sentences.""" + MARKDOWN_FORMAT
 SYSTEM_PROMPT_DEPS = """COBOL expert. Extract PERFORM call relationships. Return JSON array: [{{"caller":"X","callee":"Y","file":"...","line":N}}]. Use only provided code. If none: []."""
-SYSTEM_PROMPT_DOC = """You are a COBOL expert. Write technical documentation for the provided code in 3 sentences maximum. Include: what it does, what data it uses, and what calls it."""
+SYSTEM_PROMPT_DOC = """You are a COBOL expert. Write technical documentation for the provided code in 3 sentences maximum. Include: what it does, what data it uses, and what calls it.""" + MARKDOWN_FORMAT
 SYSTEM_PROMPT_BUSINESS_LOGIC = """You are a COBOL expert. Analyze the code and respond in exactly this format with no extra text:
 Business Rule: [one sentence]
 Details: [one sentence]
 Data Involved: [comma separated fields]
-Business Impact: [one sentence]"""
+Business Impact: [one sentence]""" + MARKDOWN_FORMAT
 
 SYSTEM_PROMPT_EXPLAIN_SNIPPET = """You are an expert COBOL developer. The user will paste raw COBOL code. Explain it in plain English using this exact format:
 
@@ -59,7 +60,7 @@ What it does: [1-2 sentences describing the overall purpose]
 Step by step: [numbered list of what each section does]
 Data involved: [bullet list of key variables and data structures]
 Business meaning: [1 sentence on the real-world business purpose]
-Potential issues: [bullet list of any risks, gotchas, or legacy concerns]"""
+Potential issues: [bullet list of any risks, gotchas, or legacy concerns]""" + MARKDOWN_FORMAT
 
 
 class QueryRequest(BaseModel):
