@@ -471,7 +471,7 @@ export default function Home() {
   return (
     <div className="min-h-screen bg-gray-950 text-gray-100">
       <main className="overflow-auto">
-        <div className={`mx-auto px-6 py-16 ${activeTab === "dashboard" ? "max-w-full" : "max-w-3xl"}`}>
+        <div className="mx-auto w-full px-6 py-16">
           <h1 className="mb-2 text-3xl font-bold tracking-tight">Legacy Lens</h1>
         <p className="mb-10 text-gray-400">
           Query the COBOL codebase in natural language
@@ -666,7 +666,7 @@ export default function Home() {
 
         {/* Chat history (Ask a Question tab only) */}
         {activeTab === "query" && chatHistory.length > 0 && (
-          <div className="mb-6 space-y-4">
+          <div className="mb-6 w-full space-y-4">
             {chatHistory.map((msg, msgIdx) => {
               const isExpanded = expandedMessageIdx === msgIdx;
               const contentPreviewLen = 180;
@@ -679,13 +679,13 @@ export default function Home() {
               return (
                 <div
                   key={msgIdx}
-                  className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}
+                  className={`flex w-full ${msg.role === "user" ? "justify-end" : "justify-start"}`}
                 >
                   <div
-                    className={`relative max-w-[85%] rounded-lg px-4 py-3 ${
+                    className={`relative rounded-lg px-4 py-3 ${
                       msg.role === "user"
-                        ? "bg-blue-600 text-white"
-                        : "bg-gray-800 text-gray-200"
+                        ? "max-w-2xl ml-auto bg-blue-600 text-white"
+                        : "w-full bg-gray-800 text-gray-200"
                     }`}
                   >
                     {msg.role === "assistant" && msg.content && (
@@ -828,8 +828,8 @@ export default function Home() {
 
         {/* Input area (hidden on dashboard and explain-snippet) */}
         {activeTab !== "dashboard" && activeTab !== "explain-snippet" && (
-        <div className="mb-6">
-          <div className="flex gap-2">
+        <div className="mb-6 w-full">
+          <div className="flex w-full gap-2">
             <input
               type="text"
               value={getInput()}
