@@ -49,8 +49,8 @@ except Exception:
     }
 
 # RAG accuracy constants
-SNIPPET_MAX_CHARS = 80
-CONTEXT_MAX_TOKENS = 1500
+SNIPPET_MAX_CHARS = 60
+CONTEXT_MAX_TOKENS = 1200
 TOP_K = 2
 TOP_K_BROAD = 8  # for summary/overview queries
 TOP_K_DEPS = 3  # for dependencies (reduced for latency)
