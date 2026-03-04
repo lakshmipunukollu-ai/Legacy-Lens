@@ -534,6 +534,18 @@ export default function Home() {
                             {d.health_score}/100
                           </div>
                           <div className="mt-1 text-sm text-gray-400">Health Score</div>
+                          <div className="mt-3 h-2 w-full overflow-hidden rounded-full bg-gray-700">
+                            <div
+                              className={`h-2 rounded-full ${
+                                d.health_score >= 80
+                                  ? "bg-green-500"
+                                  : d.health_score >= 60
+                                    ? "bg-yellow-500"
+                                    : "bg-red-500"
+                              }`}
+                              style={{ width: `${d.health_score}%` }}
+                            />
+                          </div>
                         </div>
                       </div>
 
@@ -585,7 +597,7 @@ export default function Home() {
                                     <div className="flex justify-between text-sm">
                                       <span className="text-gray-300">{p.pattern}</span>
                                       <span className="text-gray-500">
-                                        {p.count.toLocaleString()} ({barWidth}%)
+                                        {p.count.toLocaleString()}
                                       </span>
                                     </div>
                                     <div className="mt-1 h-2 overflow-hidden rounded bg-gray-700">
@@ -620,6 +632,9 @@ export default function Home() {
                       {/* Row 4 — Bottom banner */}
                       <div className="rounded-xl bg-gray-900 p-4 text-center text-sm text-gray-500">
                         ⚡ Powered by Pinecone + GPT-4o-mini · {d.total_chunks.toLocaleString()} vectors · {d.total_files.toLocaleString()} COBOL files · {d.total_loc.toLocaleString()} LOC
+                        {d.computed_at && (
+                          <> · Last analyzed: {new Date(d.computed_at).toLocaleString()}</>
+                        )}
                       </div>
                     </>
                   );
