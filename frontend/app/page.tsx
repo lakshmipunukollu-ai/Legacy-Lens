@@ -159,6 +159,8 @@ export default function Home() {
     try {
       if (activeTab === "query") {
         const question = (overrideQuestion ?? queryInput).trim();
+        setChatHistory((prev) => [...prev, { role: "user" as const, content: question }]);
+        if (!overrideQuestion) setQueryInput("");
         const res = await fetch(`${apiUrl}/query`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -168,7 +170,6 @@ export default function Home() {
         const data = await res.json();
         setChatHistory((prev) => [
           ...prev,
-          { role: "user" as const, content: question },
           {
             role: "assistant" as const,
             content: data.answer,
@@ -176,7 +177,6 @@ export default function Home() {
             latencyMs: data.latency_ms ?? undefined,
           },
         ]);
-        if (!overrideQuestion) setQueryInput("");
       } else if (activeTab === "dependencies") {
         const res = await fetch(`${apiUrl}/dependencies`, {
           method: "POST",
@@ -225,6 +225,13 @@ export default function Home() {
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Request failed");
+      if (activeTab === "query") {
+        setChatHistory((prev) => {
+          const last = prev[prev.length - 1];
+          if (last?.role === "user") return prev.slice(0, -1);
+          return prev;
+        });
+      }
     } finally {
       setLoading(false);
     }

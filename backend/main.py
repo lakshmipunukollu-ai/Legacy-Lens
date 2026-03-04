@@ -36,7 +36,7 @@ conversation_history: dict = defaultdict(list)
 # RAG accuracy constants
 SNIPPET_MAX_CHARS = 400
 CONTEXT_MAX_TOKENS = 2000
-TOP_K = 5
+TOP_K = 2
 TOP_K_BROAD = 8  # for summary/overview queries
 MAX_TOKENS = 300
 
