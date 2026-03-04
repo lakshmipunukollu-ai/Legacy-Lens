@@ -209,6 +209,18 @@ export default function Home() {
     }
   }, [activeTab, apiUrl]);
 
+  // Keep Railway backend warm by pinging every 4 minutes
+  useEffect(() => {
+    const keepAlive = setInterval(() => {
+      fetch(`${apiUrl}/health`).catch(() => {});
+    }, 4 * 60 * 1000); // 4 minutes
+
+    // Also ping immediately on page load
+    fetch(`${apiUrl}/health`).catch(() => {});
+
+    return () => clearInterval(keepAlive);
+  }, [apiUrl]);
+
   const askedQuestions = new Set(chatHistory.filter((m) => m.role === "user").map((m) => m.content.trim().toLowerCase()));
   const suggestedQueries = EXAMPLE_QUERIES[activeTab].filter(
     (q) => !askedQuestions.has(q.trim().toLowerCase())
