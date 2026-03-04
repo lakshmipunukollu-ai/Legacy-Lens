@@ -52,10 +52,11 @@ except Exception:
     }
 
 # RAG accuracy constants
-SNIPPET_MAX_CHARS = 400
+SNIPPET_MAX_CHARS = 100
 CONTEXT_MAX_TOKENS = 2000
-TOP_K = 2
+TOP_K = 1
 TOP_K_BROAD = 8  # for summary/overview queries
+TOP_K_DEPS = 3  # for dependencies (reduced for latency)
 MAX_TOKENS = 300
 
 BROAD_QUERY_KEYWORDS = ("summary", "overview", "summarize", "describe the codebase", "what does this program do", "high level")
@@ -177,7 +178,8 @@ async def query(request: QueryRequest):
     is_entry_point_query = any(kw in q_lower for kw in ENTRY_POINT_KEYWORDS)
     is_broad_query = any(kw in q_lower for kw in BROAD_QUERY_KEYWORDS)
     broad_append = " Synthesize a concise summary from the provided chunks. Cite key files and paragraphs." if is_broad_query else ""
-    system_prompt = SYSTEM_PROMPT_QUERY + (ENTRY_POINT_APPEND if is_entry_point_query else "") + broad_append
+    file_io_append = " List findings as brief bullet points only. Maximum 5 bullets." if ("file i/o" in q_lower or "file io" in q_lower or "operations" in q_lower) else ""
+    system_prompt = SYSTEM_PROMPT_QUERY + (ENTRY_POINT_APPEND if is_entry_point_query else "") + broad_append + file_io_append
 
     vectorstore = get_vectorstore()
     k = TOP_K_BROAD if is_broad_query else TOP_K
@@ -268,7 +270,7 @@ async def explain_snippet(request: ExplainSnippetRequest):
         ("system", SYSTEM_PROMPT_EXPLAIN_SNIPPET),
         ("human", "COBOL code:\n\n{code}\n\nExplain in the required format:"),
     ])
-    llm = ChatOpenAI(model="gpt-4o-mini", temperature=0, max_tokens=400)
+    llm = ChatOpenAI(model="gpt-4o-mini", temperature=0, max_tokens=300)
     chain = prompt | llm | StrOutputParser()
     explanation = chain.invoke({"code": code})
     latency_ms = round((time.time() - start_time) * 1000)
@@ -290,21 +292,26 @@ async def clear_history(request: ClearHistoryRequest):
 
 @app.get("/health")
 async def health():
-    return {"status": "ok"}
+    start = time.time()
+    return {"status": "ok", "latency_ms": round((time.time() - start) * 1000)}
 
 
 @app.get("/stats")
 async def stats():
     """Return Pinecone index stats: total chunk count."""
+    start_time = time.time()
     index, index_name = _get_pinecone_index()
     if index is None:
-        return {"total_chunks": 0, "index_name": index_name, "status": "ok", "message": "Pinecone not configured (PINECONE_INDEX_HOST required)"}
+        latency_ms = round((time.time() - start_time) * 1000)
+        return {"total_chunks": 0, "index_name": index_name, "status": "ok", "message": "Pinecone not configured (PINECONE_INDEX_HOST required)", "latency_ms": latency_ms}
     try:
-        stats = index.describe_index_stats()
-        total = stats.get("total_vector_count", 0)
-        return {"total_chunks": total, "index_name": index_name, "status": "ok"}
+        s = index.describe_index_stats()
+        total = s.get("total_vector_count", 0)
+        latency_ms = round((time.time() - start_time) * 1000)
+        return {"total_chunks": total, "index_name": index_name, "status": "ok", "latency_ms": latency_ms}
     except Exception as e:
-        return {"total_chunks": 0, "index_name": index_name, "status": "error", "message": str(e)}
+        latency_ms = round((time.time() - start_time) * 1000)
+        return {"total_chunks": 0, "index_name": index_name, "status": "error", "message": str(e), "latency_ms": latency_ms}
 
 
 # --- Full file drill-down ---
@@ -481,7 +488,7 @@ async def dependencies(request: QueryRequest):
     vectorstore = get_vectorstore()
     doc_scores = vectorstore.similarity_search_with_score(
         "PERFORM statement calling paragraph or section " + (request.question or "dependencies"),
-        k=TOP_K_BROAD,
+        k=TOP_K_DEPS,
     )
     if not doc_scores:
         latency_ms = round((time.time() - start_time) * 1000)

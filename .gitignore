@@ -29,3 +29,7 @@ Thumbs.db
 dist/
 build/
 *.egg-info/
+
+# Audit / demo artifacts
+DEMO_SCRIPT.md
+AUDIT_REPORT.md
