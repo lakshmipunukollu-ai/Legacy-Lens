@@ -4,6 +4,17 @@ import statistics
 
 BASE_URL = "https://legacy-lens-production-5e14.up.railway.app"
 
+# Warm up with a real query to initialize Pinecone + OpenAI connections
+print("Warming up backend...")
+try:
+    requests.post(f"{BASE_URL}/query",
+        json={"question": "Where is the main entry point?", "session_id": "warmup"},
+        timeout=30)
+    print("Backend warm.")
+except Exception:
+    pass
+time.sleep(2)
+
 ENDPOINTS = [
     ("GET /health", "get", "/health", None),
     ("GET /stats", "get", "/stats", None),
@@ -36,11 +47,16 @@ def run_latency_tests():
             latencies.append(round((time.time() - start) * 1000))
             time.sleep(0.5)
 
-        avg = round(statistics.mean(latencies))
-        p95 = round(sorted(latencies)[int(len(latencies)*0.95)] if len(latencies) > 1 else latencies[-1])
-        min_l = min(latencies)
-        max_l = max(latencies)
-        target = 3000
+        # For health and stats, skip first run (cold start) and average runs 2-3
+        if name == "GET /health" or name == "GET /stats":
+            measured_latencies = latencies[1:]  # Skip first run
+            target = 1000
+        else:
+            measured_latencies = latencies
+            target = 3000
+        avg = round(statistics.mean(measured_latencies))
+        min_l = min(measured_latencies)
+        max_l = max(measured_latencies)
         passes = avg <= target
         if not passes:
             all_pass = False

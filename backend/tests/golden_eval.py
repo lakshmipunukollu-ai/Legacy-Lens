@@ -181,6 +181,17 @@ def run_golden_eval():
     return results, passed, failed
 
 if __name__ == "__main__":
+    # Warm up with a real query to initialize Pinecone + OpenAI connections
+    print("Warming up backend...")
+    try:
+        requests.post(f"{BASE_URL}/query",
+            json={"question": "Where is the main entry point?", "session_id": "warmup"},
+            timeout=30)
+        print("Backend warm.")
+    except Exception:
+        pass
+    time.sleep(2)
+
     results, passed, failed = run_golden_eval()
     with open("golden_results.json", "w") as f:
         json.dump(results, f, indent=2)
