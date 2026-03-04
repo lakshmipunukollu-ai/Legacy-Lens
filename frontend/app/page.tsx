@@ -451,19 +451,19 @@ export default function Home() {
   return (
     <div className="min-h-screen bg-gray-950 text-gray-100">
       <main className="overflow-auto">
-        <div className="mx-auto max-w-3xl px-6 py-16">
+        <div className={`mx-auto px-6 py-16 ${activeTab === "dashboard" ? "max-w-full" : "max-w-3xl"}`}>
           <h1 className="mb-2 text-3xl font-bold tracking-tight">Legacy Lens</h1>
         <p className="mb-10 text-gray-400">
           Query the COBOL codebase in natural language
         </p>
 
-        {/* Tab bar - scrollable on smaller screens, all 5 tabs */}
-        <div className="flex overflow-x-auto gap-1 mb-4 border-b border-gray-700 pb-0">
+        {/* Tab bar - horizontally scrollable */}
+        <div className="flex overflow-x-auto scrollbar-hide gap-1 mb-4 border-b border-gray-700 pb-0">
           {TABS.map((tab) => (
             <button
               key={tab.id}
               onClick={() => setActiveTab(tab.id)}
-              className={`whitespace-nowrap px-4 py-2 text-sm font-medium transition shrink-0 ${
+              className={`whitespace-nowrap flex-shrink-0 px-4 py-2 text-sm font-medium transition ${
                 activeTab === tab.id
                   ? "border-b-2 border-blue-500 text-blue-400"
                   : "text-gray-400 hover:text-gray-200"
@@ -484,9 +484,9 @@ export default function Home() {
           </div>
         )}
 
-        {/* Dashboard tab */}
+        {/* Dashboard tab — full width */}
         {activeTab === "dashboard" && (
-          <div className="mb-8 space-y-8">
+          <div className="w-full px-6 py-6 space-y-6">
             {dashboardLoading ? (
               <div className="flex items-center justify-center py-16">
                 <div className="h-10 w-10 animate-spin rounded-full border-2 border-emerald-500 border-t-transparent" />
@@ -496,10 +496,17 @@ export default function Home() {
                 {(() => {
                   const d = dashboardData || FALLBACK_DASHBOARD;
                   const maxLoc = Math.max(...d.top_files.map((f) => f.loc), 1);
+                  const maxCount = Math.max(...d.patterns_summary.map((p) => p.count), 1);
+                  const healthScoreColor =
+                    d.health_score >= 80
+                      ? "text-green-500"
+                      : d.health_score >= 60
+                        ? "text-yellow-500"
+                        : "text-red-500";
                   return (
                     <>
-                      {/* Row 1 — 3 stat cards */}
-                      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+                      {/* Row 1 — 4 cards */}
+                      <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
                         <div className="rounded-xl bg-gray-800 p-6">
                           <div className="text-3xl">📁</div>
                           <div className="mt-1 text-2xl font-bold text-gray-100">
@@ -521,46 +528,24 @@ export default function Home() {
                           </div>
                           <div className="mt-1 text-sm text-gray-400">Indexed Chunks</div>
                         </div>
-                      </div>
-                      {d.computed_at && (
-                        <p className="mt-2 text-center text-xs text-gray-500">
-                          Last computed: {new Date(d.computed_at).toLocaleString()}
-                        </p>
-                      )}
-
-                      {/* Row 2 — Health Score */}
-                      <div className="rounded-xl bg-gray-800 p-6">
-                        <h2 className="mb-4 text-center text-lg font-semibold text-gray-200">
-                          Codebase Health Score: {d.health_score}/100
-                        </h2>
-                        <div className="mb-4 h-3 overflow-hidden rounded-full bg-gray-700">
-                          <div
-                            className={`h-full rounded-full transition-all ${
-                              d.health_score >= 80
-                                ? "bg-green-500"
-                                : d.health_score >= 60
-                                  ? "bg-yellow-500"
-                                  : "bg-red-500"
-                            }`}
-                            style={{ width: `${d.health_score}%` }}
-                          />
-                        </div>
-                        <div className="prose prose-invert prose-sm max-w-none text-gray-400">
-                          <ReactMarkdown>
-                            {d.health_notes.map((n) => `- ${n}`).join("\n")}
-                          </ReactMarkdown>
+                        <div className="rounded-xl bg-gray-800 p-6">
+                          <div className="text-3xl">🏥</div>
+                          <div className={`mt-1 text-2xl font-bold ${healthScoreColor}`}>
+                            {d.health_score}/100
+                          </div>
+                          <div className="mt-1 text-sm text-gray-400">Health Score</div>
                         </div>
                       </div>
 
-                      {/* Row 3 — Two columns */}
-                      <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+                      {/* Row 2 — Two columns */}
+                      <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
                         <div className="rounded-xl bg-gray-800 p-6">
                           <h3 className="mb-4 font-semibold text-gray-200">
                             📊 Top Files by Complexity
                           </h3>
                           <div className="space-y-3">
                             {d.top_files.map((f) => {
-                              const barWidthPct = Math.min(80, (f.loc / maxLoc) * 80);
+                              const barWidthPct = Math.max(2, Math.round((f.loc / maxLoc) * 80));
                               return (
                                 <div key={f.file} className="flex items-center gap-3">
                                   <div className="min-w-0 flex-1">
@@ -583,7 +568,7 @@ export default function Home() {
                           </div>
                           {d.top_files.length > 0 && d.total_loc > 0 && d.top_files[0].loc / d.total_loc > 0.5 && (
                             <p className="mt-3 text-xs text-amber-500">
-                              * {d.top_files[0].file} contains {Math.round((d.top_files[0].loc / d.total_loc) * 100)}% of total LOC
+                              ⚠️ {d.top_files[0].file} contains {Math.round((d.top_files[0].loc / d.total_loc) * 100)}% of total LOC
                             </p>
                           )}
                         </div>
@@ -593,21 +578,20 @@ export default function Home() {
                           </h3>
                           <div className="space-y-3">
                             {d.patterns_summary.map((p) => {
-                              const maxCount = Math.max(...d.patterns_summary.map((x) => x.count), 1);
-                              const percentage = Math.round((p.count / maxCount) * 100);
+                              const barWidth = Math.round((p.count / maxCount) * 100);
                               return (
                                 <div key={p.pattern} className="flex items-center gap-3">
                                   <div className="min-w-0 flex-1">
                                     <div className="flex justify-between text-sm">
                                       <span className="text-gray-300">{p.pattern}</span>
                                       <span className="text-gray-500">
-                                        {p.count.toLocaleString()} ({percentage}%)
+                                        {p.count.toLocaleString()} ({barWidth}%)
                                       </span>
                                     </div>
                                     <div className="mt-1 h-2 overflow-hidden rounded bg-gray-700">
                                       <div
                                         className="h-full rounded bg-blue-600"
-                                        style={{ width: `${percentage}%` }}
+                                        style={{ width: `${barWidth}%` }}
                                       />
                                     </div>
                                   </div>
@@ -618,10 +602,24 @@ export default function Home() {
                         </div>
                       </div>
 
+                      {/* Row 3 — Health Analysis */}
+                      <div className="rounded-xl bg-gray-800 p-6">
+                        <h3 className="mb-4 font-semibold text-gray-200">🏥 Health Analysis</h3>
+                        <ul className="space-y-1 text-sm text-gray-400">
+                          {d.health_notes.map((n, i) => (
+                            <li key={i}>• {n}</li>
+                          ))}
+                        </ul>
+                        {d.computed_at && (
+                          <p className="mt-4 text-xs text-gray-500">
+                            Last computed: {new Date(d.computed_at).toLocaleString()}
+                          </p>
+                        )}
+                      </div>
+
                       {/* Row 4 — Bottom banner */}
-                      <div className="rounded-lg border border-gray-700 bg-gray-900/50 px-4 py-3 text-center text-sm text-gray-400">
-                        ⚡ Powered by Pinecone + GPT-4o-mini — {d.total_chunks.toLocaleString()} vectors
-                        indexed across {d.total_files.toLocaleString()} COBOL files
+                      <div className="rounded-xl bg-gray-900 p-4 text-center text-sm text-gray-500">
+                        ⚡ Powered by Pinecone + GPT-4o-mini · {d.total_chunks.toLocaleString()} vectors · {d.total_files.toLocaleString()} COBOL files · {d.total_loc.toLocaleString()} LOC
                       </div>
                     </>
                   );
