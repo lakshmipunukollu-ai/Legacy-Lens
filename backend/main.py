@@ -54,7 +54,7 @@ CONTEXT_MAX_TOKENS = 1500
 TOP_K = 2
 TOP_K_BROAD = 8  # for summary/overview queries
 TOP_K_DEPS = 3  # for dependencies (reduced for latency)
-MAX_TOKENS = 200  # reduced for latency while keeping TOP_K=2
+MAX_TOKENS = 150  # reduced for latency while keeping TOP_K=2
 
 BROAD_QUERY_KEYWORDS = ("summary", "overview", "summarize", "describe the codebase", "what does this program do", "high level")
 
@@ -169,6 +169,26 @@ ERROR_HANDLING_KEYWORDS = ("error handling", "error patterns", "fail routine", "
 ERROR_HANDLING_SEARCH_BOOST = " FAIL-ROUTINE BAIL-OUT ERROR EXCEPTION"
 
 
+async def enhance_query_with_history(question: str, history: list) -> str:
+    """If question is vague (short, contains 'that', 'it', 'this'),
+    use history to make it specific for Pinecone search."""
+    vague_indicators = ["that", "it", "this", "there", "those", "they", "same", "above"]
+    is_vague = len(question.split()) < 8 and any(w in question.lower() for w in vague_indicators)
+
+    if not is_vague or not history:
+        return question
+
+    # Get last assistant answer for context
+    last_answers = [h.get("content", "") for h in history if h.get("role") == "assistant"]
+    if not last_answers:
+        return question
+
+    # Extract key terms from last answer to enhance the query
+    last_answer = last_answers[-1][:200]  # First 200 chars
+    enhanced = f"{question} (context: {last_answer[:100]})"
+    return enhanced
+
+
 @app.post("/query", response_model=QueryResponse)
 async def query(request: QueryRequest):
     start_time = time.time()
@@ -181,7 +201,8 @@ async def query(request: QueryRequest):
 
     vectorstore = get_vectorstore()
     k = TOP_K_BROAD if is_broad_query else TOP_K
-    search_query = request.question
+    # Enhance vague queries using conversation history (for Pinecone search only)
+    search_query = await enhance_query_with_history(request.question, request.history or [])
     if is_entry_point_query:
         search_query += ENTRY_POINT_SEARCH_BOOST
     elif any(kw in q_lower for kw in FILE_IO_KEYWORDS):
