@@ -525,7 +525,7 @@ async def business_logic(request: QueryRequest):
         ("system", SYSTEM_PROMPT_BUSINESS_LOGIC),
         ("human", "COBOL code:\n{context}\n\nExtract business rules:"),
     ])
-    llm = ChatOpenAI(model="gpt-4o-mini", temperature=0, max_tokens=150)
+    llm = ChatOpenAI(model="gpt-4o-mini", temperature=0, max_tokens=80)
     chain = prompt | llm | StrOutputParser()
     business_logic_text = chain.invoke({"context": context})
 
