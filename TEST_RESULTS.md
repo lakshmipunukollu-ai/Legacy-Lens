@@ -4,26 +4,24 @@
 **Backend:** https://legacy-lens-production-5e14.up.railway.app  
 **Frontend:** https://legacy-lens-nine.vercel.app
 
-**Last run:** Final (proper /query warm-up, realistic latency targets)
+**Last run:** Verified final (proper warm-up, back-to-back)
 
 ## Test 1 — Golden Set Evaluation
 
-| ID | Status | Latency | Keyword Score | Sources | Latency Pass | Confidence | File/Line Refs |
-|----|--------|---------|---------------|---------|--------------|------------|----------------|
-| Q1 | PASS | 2819ms | 80% | 2 | ✓ | ✓ | ✓ |
-| Q2 | FAIL | 1120ms | 0% | 2 | ✓ | ✓ | ✓ |
-| Q3 | FAIL | 1107ms | 0% | 2 | ✓ | ✓ | ✓ |
-| Q4 | PASS | 2761ms | 100% | 2 | ✓ | ✓ | ✓ |
-| Q5 | PASS | 2083ms | 50% | 3 | ✓ | ✓ | ✓ |
-| Q6 | PASS | 918ms | 50% | 2 | ✓ | ✓ | ✓ |
-| Q7 | PASS | 2840ms | 33% | 2 | ✓ | ✓ | ✓ |
-| Q8 | PASS | 2562ms | 75% | 2 | ✓ | ✓ | ✓ |
-| Q9 | PASS | 5412ms | 100% | 0 | ✓ | ✓ | ✓ |
-| Q10 | FAIL | 4123ms | 75% | 2 | ✗ | ✓ | ✓ |
+| ID | Status | Latency | Keyword Score | Sources | Latency Pass | Notes |
+|----|--------|---------|---------------|---------|--------------|-------|
+| Q1 | PASS | 2034ms | 80% | 2 | ✓ | |
+| Q2 | FAIL | 1257ms | 0% | 2 | ✓ | Keyword mismatch only |
+| Q3 | FAIL | 1153ms | 0% | 2 | ✓ | Keyword mismatch only |
+| Q4 | FAIL | 3236ms | 100% | 2 | ✗ | Latency 3236ms > 3000ms |
+| Q5 | PASS | 1909ms | 50% | 3 | ✓ | |
+| Q6 | PASS | 865ms | 50% | 2 | ✓ | |
+| Q7 | FAIL | 3062ms | 33% | 2 | ✗ | Latency 3062ms > 3000ms |
+| Q8 | PASS | 2048ms | 75% | 2 | ✓ | |
+| Q9 | PASS | 6233ms | 100% | 0 | ✓ | |
+| Q10 | FAIL | 4007ms | 75% | 2 | ✗ | Latency 4007ms > 3000ms |
 
-**Overall: 7/10 passed**
-
-*Warm-up: /query before tests to initialize Pinecone + OpenAI.*
+**Overall: 5/10 passed**
 
 ## Test 2 — Retrieval Precision
 
@@ -37,56 +35,41 @@
 
 ## Test 3 — Latency Regression
 
-| Endpoint | Avg (ms) | Min (ms) | Max (ms) | Target | Pass |
-|----------|----------|----------|----------|--------|------|
-| GET /health | 5362* | 4549 | 6174 | 1000 | ✗ |
-| GET /stats | 2452* | 2121 | 2783 | 1000 | ✗ |
-| GET /health-dashboard | 2446 | 509 | 4254 | 3000 | ✓ |
-| POST /query | 2022 | 1901 | 2109 | 3000 | ✓ |
-| POST /dependencies | 2637 | 2355 | 3129 | 3000 | ✓ |
-| POST /patterns | 736 | 668 | 790 | 3000 | ✓ |
-| POST /document | 2618 | 2327 | 2900 | 3000 | ✓ |
-| POST /business-logic | 2613 | 2185 | 2991 | 3000 | ✓ |
-| POST /clear-history | 236 | 227 | 246 | 3000 | ✓ |
+| Endpoint | Avg (ms) | Target | Pass |
+|----------|----------|-------|------|
+| GET /health | 4038 | 1000 | ✗ |
+| GET /stats | 2690 | 1000 | ✗ |
+| GET /health-dashboard | 2153 | 3000 | ✓ |
+| POST /query | 2089 | 3000 | ✓ |
+| POST /dependencies | 2483 | 3000 | ✓ |
+| POST /patterns | 756 | 3000 | ✓ |
+| POST /document | 3410 | 3000 | ✗ |
+| POST /business-logic | 2526 | 3000 | ✓ |
+| POST /clear-history | 321 | 3000 | ✓ |
 
-*Health/stats: avg of runs 2–3 (skip cold start). Target 1000ms.*
-
-**All endpoints pass: No** (health, stats exceed 1000ms — Railway network latency)
+**Passed: 6/9** (Failed: /health, /stats, /document)
 
 ## Test 4 — Response Shape
 
-| Endpoint | Status |
-|----------|--------|
-| GET /health | ✅ PASS |
-| GET /stats | ✅ PASS |
-| GET /health-dashboard | ✅ PASS |
-| POST /query | ✅ PASS |
-| POST /dependencies | ✅ PASS |
-| POST /patterns | ✅ PASS |
-| POST /document | ✅ PASS |
-| POST /business-logic | ✅ PASS |
-| POST /explain-snippet | ✅ PASS |
-| POST /clear-history | ✅ PASS |
-
-**All shapes correct: Yes (10/10)**
+All 10 endpoints: ✅ PASS. Sources have file, start_line, end_line, score, snippet when present.
 
 ## Test 5 — Multi-turn Conversation
 
 | Turn | Question | Latency | Answer Received |
 |------|----------|---------|-----------------|
-| 1 | Where is the main entry point of this program? | 1893ms | ✓ |
-| 2 | What does that section do in detail? | 2813ms | ✓ |
-| 3 | What other paragraphs are near it? | 3630ms | ✓ |
-| 4 | What data does it use? | 2395ms | ✓ |
+| 1 | Where is the main entry point? | 2607ms | ✓ |
+| 2 | What does that section do in detail? | 1317ms | ✗ ("I couldn't find") |
+| 3 | What other paragraphs are near it? | 2718ms | ✓ |
+| 4 | What data does it use? | 2904ms | ✓ |
 
-**All turns answered: 4/4**
+**All turns answered: 3/4** (Turn 2 failed)
 
 ## Summary
 
-| Test | Result |
-|------|--------|
-| Golden Set | 7/10 |
-| Retrieval Precision | 50% |
-| Latency Regression | Fail |
-| Response Shape | Pass |
-| Multi-turn | Pass (4/4) |
+| Test | Score | Target | Pass/Fail |
+|------|-------|--------|-----------|
+| Golden Set | 5/10 | 7/10 | Fail |
+| Retrieval Precision | 50% | >50% | Pass |
+| Latency Regression | 6/9 | All <3s | Fail |
+| Response Shape | 10/10 | 10/10 | Pass |
+| Multi-turn | 3/4 | 4/4 | Fail |
