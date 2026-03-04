@@ -4,32 +4,38 @@
 **Backend:** https://legacy-lens-production-5e14.up.railway.app  
 **Frontend:** https://legacy-lens-nine.vercel.app
 
+**Last run:** Post-fix (client-side history, TOP_K=2, error handling patterns trigger)
+
 ## Test 1 — Golden Set Evaluation
 
 | ID | Status | Latency | Keyword Score | Sources | Latency Pass | Confidence | File/Line Refs |
 |----|--------|---------|---------------|---------|--------------|------------|----------------|
-| Q1 | PASS | 2363ms | 40% | 1 | ✓ | ✓ | ✓ |
-| Q2 | FAIL | 1269ms | 0% | 1 | ✓ | ✓ | ✓ |
-| Q3 | FAIL | 1896ms | 0% | 1 | ✓ | ✓ | ✓ |
-| Q4 | FAIL | 1170ms | 0% | 1 | ✓ | ✓ | ✓ |
-| Q5 | PASS | 2214ms | 50% | 3 | ✓ | ✓ | ✓ |
-| Q6 | PASS | 769ms | 50% | 1 | ✓ | ✓ | ✓ |
-| Q7 | PASS | 2243ms | 33% | 1 | ✓ | ✓ | ✓ |
-| Q8 | PASS | 2804ms | 100% | 1 | ✓ | ✓ | ✓ |
-| Q9 | PASS | 6172ms | 100% | 0 | ✓ | ✓ | ✓ |
-| Q10 | FAIL | 3476ms | 75% | 1 | ✗ | ✓ | ✓ |
+| Q1 | FAIL | 3569ms | 80% | 2 | ✗ | ✓ | ✓ |
+| Q2 | FAIL | 1390ms | 0% | 2 | ✓ | ✓ | ✓ |
+| Q3 | FAIL | 1358ms | 0% | 2 | ✓ | ✓ | ✓ |
+| Q4 | FAIL | 3640ms | 100% | 2 | ✗ | ✓ | ✓ |
+| Q5 | PASS | 2095ms | 50% | 3 | ✓ | ✓ | ✓ |
+| Q6 | PASS | 819ms | 50% | 2 | ✓ | ✓ | ✓ |
+| Q7 | FAIL | 3053ms | 33% | 2 | ✗ | ✓ | ✓ |
+| Q8 | PASS | 2702ms | 100% | 2 | ✓ | ✓ | ✓ |
+| Q9 | PASS | 7250ms | 100% | 0 | ✓ | ✓ | ✓ |
+| Q10 | FAIL | 4401ms | 75% | 2 | ✗ | ✓ | ✓ |
 
-**Overall: 6/10 passed**
+**Overall: 4/10 passed**
+
+*Note: Q4 improved from 0% to 100% keywords with TOP_K=2. Some queries exceed 3000ms latency target due to retrieving 2 chunks.*
 
 ## Test 2 — Retrieval Precision
 
 | ID | Description | Retrieved | Relevant | Precision |
 |----|--------------|-----------|----------|-----------|
-| P1 | Main entry point query | 1 | 1 | 100% |
-| P2 | File I/O query | 1 | 0 | 0% |
-| P3 | Error handling query | 1 | 0 | 0% |
+| P1 | Main entry point query | 2 | 2 | 100% |
+| P2 | File I/O query | 2 | 1 | 50% |
+| P3 | Error handling query | 2 | 0 | 0% |
 
-**Overall precision: 33% (target: >70%)**
+**Overall precision: 50% (target: >70%)**
+
+*Note: Improved from 33% with TOP_K=2. P2 improved from 0% to 50% relevant chunks.*
 
 ## Test 3 — Latency Regression
 
@@ -68,19 +74,21 @@
 
 | Turn | Question | Latency | Answer Received |
 |------|----------|---------|-----------------|
-| 1 | Where is the main entry point of this program? | 1679ms | ✓ |
-| 2 | What does that section do in detail? | 1097ms | ✗ |
-| 3 | What other paragraphs are near it? | 1422ms | ✗ |
-| 4 | What data does it use? | 934ms | ✗ |
+| 1 | Where is the main entry point of this program? | 3379ms | ✓ |
+| 2 | What does that section do in detail? | 1882ms | ✓ |
+| 3 | What other paragraphs are near it? | 2408ms | ✓ |
+| 4 | What data does it use? | 3058ms | ✓ |
 
-**All turns answered: No (1/4)**
+**All turns answered: Yes (4/4)**
+
+*Note: Client-side history fix — conversation context now persists across turns. Railway restarts no longer break multi-turn.*
 
 ## Summary
 
 | Test | Result |
 |------|--------|
-| Golden Set | 6/10 |
-| Retrieval Precision | 33% |
+| Golden Set | 4/10 |
+| Retrieval Precision | 50% |
 | Latency Regression | Pass |
 | Response Shape | Pass |
-| Multi-turn | Fail (1/4) |
+| Multi-turn | Pass (4/4) |
