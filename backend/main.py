@@ -175,8 +175,8 @@ async def query(request: QueryRequest):
     scores = [_distance_to_score(s) for _, s in doc_scores]
     context = _build_context(docs)
 
-    # Get last 6 messages from conversation history
-    history = conversation_history[request.session_id][-6:]
+    # Get last 4 messages from conversation history (2 exchanges max)
+    history = conversation_history[request.session_id][-4:]
     history_messages = []
     for h in history:
         role = "human" if h["role"] == "user" else "ai"
@@ -192,10 +192,10 @@ async def query(request: QueryRequest):
     chain = prompt | llm | StrOutputParser()
     answer = chain.invoke({"context": context, "question": request.question})
 
-    # Append to conversation history and cap at 6 messages
+    # Append to conversation history and cap at 4 messages (2 exchanges)
     conversation_history[request.session_id].append({"role": "user", "content": request.question})
     conversation_history[request.session_id].append({"role": "assistant", "content": answer})
-    while len(conversation_history[request.session_id]) > 6:
+    while len(conversation_history[request.session_id]) > 4:
         conversation_history[request.session_id].pop(0)
         conversation_history[request.session_id].pop(0)
 
