@@ -315,10 +315,18 @@ export default function Home() {
           return [...prev, { role: "user" as const, content: question }];
         });
         if (!overrideQuestion) setQueryInput("");
+        const historyPayload = chatHistory.slice(-6).map((msg) => ({
+          role: msg.role,
+          content: msg.content,
+        }));
         const res = await fetch(`${apiUrl}/query`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ question, session_id: sessionId }),
+          body: JSON.stringify({
+            question,
+            session_id: sessionId,
+            history: historyPayload,
+          }),
         });
         if (!res.ok) throw new Error(`API error: ${res.status}`);
         const data = await res.json();

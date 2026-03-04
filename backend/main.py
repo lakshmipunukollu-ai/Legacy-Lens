@@ -7,7 +7,6 @@ import json
 import os
 import re
 import time
-from collections import defaultdict
 from pathlib import Path
 from dotenv import load_dotenv
 load_dotenv(Path(__file__).resolve().parent / ".env")
@@ -32,8 +31,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-conversation_history: dict = defaultdict(list)
-
 # Load codebase stats at startup
 STATS_FILE = Path(__file__).parent / "codebase_stats.json"
 try:
@@ -54,7 +51,7 @@ except Exception:
 # RAG accuracy constants
 SNIPPET_MAX_CHARS = 100
 CONTEXT_MAX_TOKENS = 2000
-TOP_K = 1
+TOP_K = 2
 TOP_K_BROAD = 8  # for summary/overview queries
 TOP_K_DEPS = 3  # for dependencies (reduced for latency)
 MAX_TOKENS = 300
@@ -63,7 +60,7 @@ BROAD_QUERY_KEYWORDS = ("summary", "overview", "summarize", "describe the codeba
 
 # Short system prompts (under 100 words each)
 MARKDOWN_FORMAT = " Format your response using markdown. Use bold for important terms, bullet points for lists, and ### headers for sections."
-SYSTEM_PROMPT_QUERY = """COBOL expert. Answer ONLY from provided context. Cite file names and line numbers. If the context contains OPEN, READ, WRITE, CLOSE, FAIL-ROUTINE, BAIL-OUT, or similar—that IS the answer; present it directly. Only say "I couldn't find" when the chunks are truly irrelevant (e.g., no file ops when asked about I/O). When context is relevant, answer confidently with specifics. Keep responses under 4 sentences.""" + MARKDOWN_FORMAT
+SYSTEM_PROMPT_QUERY = """COBOL expert. Answer ONLY from provided context. Cite file names and line numbers. If the context contains OPEN, READ, WRITE, CLOSE, FAIL-ROUTINE, BAIL-OUT, or similar—that IS the answer; present it directly. Only say "I couldn't find" when the chunks are truly irrelevant (e.g., no file ops when asked about I/O). When context is relevant, answer confidently with specifics. Keep responses under 4 sentences. If the exact item is not found, describe the most relevant related code you did find and explain why the specific item may not be in the retrieved context.""" + MARKDOWN_FORMAT
 SYSTEM_PROMPT_DEPS = """COBOL expert. Extract PERFORM call relationships. Return JSON array: [{{"caller":"X","callee":"Y","file":"...","line":N}}]. Use only provided code. If none: []."""
 SYSTEM_PROMPT_DOC = """You are a COBOL expert. Write technical documentation for the provided code in 3 sentences maximum. Include: what it does, what data it uses, and what calls it.""" + MARKDOWN_FORMAT
 SYSTEM_PROMPT_BUSINESS_LOGIC = """You are a COBOL expert. Analyze the code and respond in exactly this format with no extra text:
@@ -84,6 +81,7 @@ Potential issues: [bullet list of any risks, gotchas, or legacy concerns]""" + M
 class QueryRequest(BaseModel):
     question: str
     session_id: str = "default"
+    history: list = []  # Frontend sends last 3 exchanges
 
 
 class SourceItem(BaseModel):
@@ -178,7 +176,7 @@ async def query(request: QueryRequest):
     is_entry_point_query = any(kw in q_lower for kw in ENTRY_POINT_KEYWORDS)
     is_broad_query = any(kw in q_lower for kw in BROAD_QUERY_KEYWORDS)
     broad_append = " Synthesize a concise summary from the provided chunks. Cite key files and paragraphs." if is_broad_query else ""
-    file_io_append = " List findings as brief bullet points only. Maximum 5 bullets." if ("file i/o" in q_lower or "file io" in q_lower or "operations" in q_lower) else ""
+    file_io_append = " List findings as brief bullet points only. Maximum 5 bullets." if ("file i/o" in q_lower or "file io" in q_lower or "operations" in q_lower or "error handling patterns" in q_lower) else ""
     system_prompt = SYSTEM_PROMPT_QUERY + (ENTRY_POINT_APPEND if is_entry_point_query else "") + broad_append + file_io_append
 
     vectorstore = get_vectorstore()
@@ -204,29 +202,20 @@ async def query(request: QueryRequest):
     scores = [_distance_to_score(s) for _, s in doc_scores]
     context = _build_context(docs)
 
-    # Get last 2 messages from conversation history (1 exchange max)
-    history = conversation_history[request.session_id][-2:]
-    history_messages = []
-    for h in history:
-        role = "human" if h["role"] == "user" else "ai"
-        history_messages.append((role, h["content"]))
+    # Build messages from history sent by frontend (last 3 exchanges = 6 messages)
+    messages = [("system", system_prompt)]
+    for h in (request.history or [])[-6:]:
+        role = "human" if h.get("role") == "user" else "ai"
+        content = h.get("content", "")
+        if content:
+            messages.append((role, content))
+    messages.append(("human", "Context:\n{context}\n\nQuestion: {question}"))
 
-    prompt = ChatPromptTemplate.from_messages([
-        ("system", system_prompt),
-        *history_messages,
-        ("human", "Context:\n{context}\n\nQuestion: {question}"),
-    ])
+    prompt = ChatPromptTemplate.from_messages(messages)
 
     llm = ChatOpenAI(model="gpt-4o-mini", temperature=0, max_tokens=MAX_TOKENS)
     chain = prompt | llm | StrOutputParser()
     answer = chain.invoke({"context": context, "question": request.question})
-
-    # Append to conversation history and cap at 2 messages (1 exchange)
-    conversation_history[request.session_id].append({"role": "user", "content": request.question})
-    conversation_history[request.session_id].append({"role": "assistant", "content": answer})
-    while len(conversation_history[request.session_id]) > 2:
-        conversation_history[request.session_id].pop(0)
-        conversation_history[request.session_id].pop(0)
 
     sources = [
         SourceItem(
@@ -283,9 +272,8 @@ class ClearHistoryRequest(BaseModel):
 
 @app.post("/clear-history")
 async def clear_history(request: ClearHistoryRequest):
-    """Clear conversation history for a session. No LLM or Pinecone calls."""
+    """Clear conversation history. History is now client-side; this endpoint returns success for compatibility."""
     start_time = time.time()
-    conversation_history[request.session_id] = []
     latency_ms = round((time.time() - start_time) * 1000)
     return {"status": "cleared", "session_id": request.session_id, "latency_ms": latency_ms}
 

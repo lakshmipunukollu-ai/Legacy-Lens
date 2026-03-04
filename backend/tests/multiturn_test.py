@@ -17,14 +17,20 @@ def run_multiturn_test():
     print(f"Session ID: {SESSION_ID}")
     print("="*60)
 
-    # Clear history first
+    # Clear history first (client-side; endpoint returns success)
     requests.post(f"{BASE_URL}/clear-history", json={"session_id": SESSION_ID})
 
     previous_answers = []
+    history = []  # Client-side: last 3 exchanges = 6 messages
     passed = 0
 
     for i, question in enumerate(CONVERSATION):
-        resp = requests.post(f"{BASE_URL}/query", json={"question": question, "session_id": SESSION_ID}, timeout=30)
+        history_payload = history[-6:]  # Last 3 exchanges
+        resp = requests.post(
+            f"{BASE_URL}/query",
+            json={"question": question, "session_id": SESSION_ID, "history": history_payload},
+            timeout=30,
+        )
         data = resp.json()
         answer = data.get("answer", "")
         latency = data.get("latency_ms", 0)
@@ -44,6 +50,9 @@ def run_multiturn_test():
         if i > 0 and previous_answers:
             print(f"  Context check: answer #{i+1} should reference previous context")
 
+        # Update client-side history for next turn
+        history.append({"role": "user", "content": question})
+        history.append({"role": "assistant", "content": answer})
         previous_answers.append(answer)
         time.sleep(0.5)
 
