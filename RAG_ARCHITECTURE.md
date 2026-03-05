@@ -89,7 +89,7 @@ User natural language query
         ↓
 OpenAI text-embedding-3-small (1024 dims)
         ↓
-Pinecone similarity_search_with_score (top-1, cosine)
+Pinecone similarity_search_with_score (top-2, cosine)
         ↓
 Score conversion: (1 - distance) × 100 → percentage
         ↓
@@ -100,7 +100,7 @@ GPT-4o-mini (COBOL expert system prompt + assembled context)
 Answer + source citations with confidence scores
 ```
 
-**Top-k:** 1 chunk per query (reduced from 5 to improve latency)
+**Top-k:** 2 chunks per query — provides broader retrieval coverage while keeping latency under 3,000ms
 
 **Re-ranking:** Not implemented in MVP. Cohere Rerank API identified as next upgrade
 to improve result ordering for ambiguous queries.

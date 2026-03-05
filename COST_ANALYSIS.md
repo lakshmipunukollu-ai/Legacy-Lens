@@ -28,7 +28,7 @@
 - **Storage used:** ~16,406 chunks × 1024 dims = well within 2GB free tier
 
 ### Deployment
-- **Railway:** Free Starter tier — $0.00
+- **Railway:** Hobby plan — $5.00/month (upgraded to eliminate cold starts)
 - **Vercel:** Free Hobby tier — $0.00
 
 ### Total Development Spend
@@ -37,9 +37,9 @@
 | Embeddings (3 ingestion runs) | ~$0.33 |
 | GPT-4o-mini (200 test queries) | ~$0.10 |
 | Pinecone | $0.00 |
-| Railway | $0.00 |
+| Railway | $5.00 |
 | Vercel | $0.00 |
-| **Total** | **~$0.43** |
+| **Total** | **~$5.43** |
 
 ---
 
