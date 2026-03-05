@@ -455,31 +455,69 @@ async def list_files():
 
 @app.get("/file")
 async def get_file(path: str = ""):
-    """Return full file content for drill-down. path is relative to codebase/."""
+    """Return file content from Pinecone index (works in production). path can be file name or relative path."""
+    start = time.time()
     if not path or ".." in path or path.startswith("/"):
         from fastapi.responses import JSONResponse
         return JSONResponse(
             status_code=400,
-            content={"detail": "Invalid path. Use relative path within codebase."},
+            content={"detail": "Invalid path. Use file name or relative path."},
         )
-    full_path = (CODEBASE_DIR / path).resolve()
-    if not str(full_path).startswith(str(CODEBASE_DIR.resolve())):
-        from fastapi.responses import JSONResponse
-        return JSONResponse(status_code=403, content={"detail": "Path traversal not allowed."})
-    if not full_path.exists() or not full_path.is_file():
-        return {
-            "error": "Full file view is available in local development only. The codebase is not bundled with the production deployment."
-        }
+    file_name = path.split("/")[-1]
     try:
-        content = full_path.read_text(encoding="utf-8", errors="replace")
-        line_count = len(content.splitlines())
-        return {"path": path, "content": content, "line_count": line_count}
-    except Exception as e:
-        from fastapi.responses import JSONResponse
-        return JSONResponse(
-            status_code=500,
-            content={"detail": f"Could not read file: {e}"},
+        index, _ = _get_pinecone_index()
+        if index is None:
+            return {
+                "path": path,
+                "content": "Pinecone not configured. Set PINECONE_INDEX_HOST and PINECONE_API_KEY.",
+                "line_count": 0,
+                "chunks_found": 0,
+                "latency_ms": round((time.time() - start) * 1000),
+            }
+        import math
+        dummy_vector = [1.0 / math.sqrt(1024)] * 1024
+        results = index.query(
+            vector=dummy_vector,
+            top_k=100,
+            filter={"file_name": {"$eq": file_name}},
+            include_metadata=True,
         )
+        if not results.matches:
+            return {
+                "path": path,
+                "content": f"No chunks found for {file_name} in the index.",
+                "line_count": 0,
+                "chunks_found": 0,
+                "latency_ms": round((time.time() - start) * 1000),
+            }
+        chunks = sorted(
+            results.matches,
+            key=lambda x: x.metadata.get("start_line", 0) if x.metadata else 0,
+        )
+        content_parts = []
+        for chunk in chunks:
+            meta = chunk.metadata or {}
+            start_line = meta.get("start_line", "?")
+            end_line = meta.get("end_line", "?")
+            text = meta.get("text", meta.get("snippet", ""))
+            content_parts.append(f"-- Lines {start_line}-{end_line} --\n{text}")
+        content = "\n\n".join(content_parts)
+        line_count = len(content.splitlines())
+        return {
+            "path": path,
+            "content": content,
+            "line_count": line_count,
+            "chunks_found": len(chunks),
+            "latency_ms": round((time.time() - start) * 1000),
+        }
+    except Exception as e:
+        return {
+            "path": path,
+            "content": f"Error retrieving file: {str(e)}",
+            "line_count": 0,
+            "chunks_found": 0,
+            "latency_ms": round((time.time() - start) * 1000),
+        }
 
 
 # --- Phase 7: Code Understanding Features ---

@@ -187,7 +187,8 @@ export default function Home() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [latencyMs, setLatencyMs] = useState<number | null>(null);
-  const [expandedFile, setExpandedFile] = useState<{ path: string; content: string; line_count: number } | null>(null);
+  const [expandedFile, setExpandedFile] = useState<{ path: string; content: string; line_count: number; chunks_found?: number } | null>(null);
+  const [expandedFileLoading, setExpandedFileLoading] = useState(false);
   const [expandedSourceIdx, setExpandedSourceIdx] = useState<number | null>(null);
   const [expandedSourcesForMessage, setExpandedSourcesForMessage] = useState<number | null>(null);
   const [sourcesOpen, setSourcesOpen] = useState(false);
@@ -443,18 +444,28 @@ export default function Home() {
       setExpandedSourceIdx(null);
       return;
     }
+    setExpandedFileLoading(true);
+    setExpandedFile(null);
+    setExpandedSourceIdx(idx);
     try {
       const res = await fetch(`${apiUrl}/file?path=${encodeURIComponent(sourcePath)}`);
       const data = await res.json();
-      if (data.error || !res.ok) {
-        setError("Full file preview is not available in production. Clone the repo locally to use this feature.");
-        return;
-      }
       setError(null);
-      setExpandedFile({ path: data.path, content: data.content, line_count: data.line_count });
-      setExpandedSourceIdx(idx);
+      setExpandedFile({
+        path: data.path,
+        content: data.content ?? "",
+        line_count: data.line_count ?? 0,
+        chunks_found: data.chunks_found,
+      });
     } catch {
-      setError("Full file preview is not available in production. Clone the repo locally to use this feature.");
+      setExpandedFile({
+        path: sourcePath,
+        content: "Failed to load file from index.",
+        line_count: 0,
+        chunks_found: 0,
+      });
+    } finally {
+      setExpandedFileLoading(false);
     }
   };
 
@@ -767,40 +778,65 @@ export default function Home() {
                                 >
                                   {s.snippet}
                                 </SyntaxHighlighter>
-                                {(s.source || s.path) && (
+                                {(s.source || s.path || s.file) && (
                                   <button
                                     onClick={() => {
                                       if (
                                         expandedChatSource?.messageIdx === msgIdx &&
-                                        expandedChatSource?.sourceIdx === sIdx
+                                        expandedChatSource?.sourceIdx === sIdx &&
+                                        expandedFile
                                       ) {
                                         setExpandedChatSource(null);
                                         setExpandedFile(null);
                                         return;
                                       }
                                       setExpandedChatSource({ messageIdx: msgIdx, sourceIdx: sIdx });
-                                      fetch(`${apiUrl}/file?path=${encodeURIComponent(s.source || s.path || "")}`)
+                                      setExpandedFileLoading(true);
+                                      setExpandedFile(null);
+                                      fetch(`${apiUrl}/file?path=${encodeURIComponent(s.source || s.path || s.file || "")}`)
                                         .then((r) => r.json())
                                         .then((d) => {
-                                          if (d.error || !d.content) return;
-                                          setExpandedFile({ path: d.path, content: d.content, line_count: d.line_count });
-                                        });
+                                          setExpandedFile({
+                                            path: d.path,
+                                            content: d.content ?? "",
+                                            line_count: d.line_count ?? 0,
+                                            chunks_found: d.chunks_found,
+                                          });
+                                        })
+                                        .finally(() => setExpandedFileLoading(false));
                                     }}
-                                    className="mt-2 rounded border border-gray-600 bg-gray-800 px-2 py-1 text-xs text-gray-300 hover:bg-gray-700"
+                                    disabled={expandedFileLoading &&
+                                      expandedChatSource?.messageIdx === msgIdx &&
+                                      expandedChatSource?.sourceIdx === sIdx}
+                                    className="mt-2 rounded border border-gray-600 bg-gray-800 px-2 py-1 text-xs text-gray-300 hover:bg-gray-700 disabled:opacity-50"
                                   >
-                                    {expandedChatSource?.messageIdx === msgIdx &&
-                                    expandedChatSource?.sourceIdx === sIdx &&
-                                    expandedFile
-                                      ? "Collapse"
-                                      : "View full file"}
+                                    {expandedFileLoading &&
+                                    expandedChatSource?.messageIdx === msgIdx &&
+                                    expandedChatSource?.sourceIdx === sIdx
+                                      ? "Loading file from index..."
+                                      : expandedChatSource?.messageIdx === msgIdx &&
+                                        expandedChatSource?.sourceIdx === sIdx &&
+                                        expandedFile
+                                        ? "Collapse"
+                                        : "View full file"}
                                   </button>
                                 )}
                                 {expandedChatSource?.messageIdx === msgIdx &&
                                   expandedChatSource?.sourceIdx === sIdx &&
-                                  expandedFile && (
+                                  expandedFileLoading && (
+                                    <div className="mt-3 rounded border border-gray-700 bg-gray-950 p-3 text-sm text-gray-400">
+                                      Loading file from index...
+                                    </div>
+                                  )}
+                                {expandedChatSource?.messageIdx === msgIdx &&
+                                  expandedChatSource?.sourceIdx === sIdx &&
+                                  expandedFile && !expandedFileLoading && (
                                     <div className="mt-3 rounded border border-gray-700 bg-gray-950 p-3">
                                       <div className="mb-1 text-xs text-gray-400">
                                         {expandedFile.path} ({expandedFile.line_count} lines)
+                                        {expandedFile.chunks_found != null && (
+                                          <span className="ml-2">· Showing {expandedFile.chunks_found} chunks from Pinecone index</span>
+                                        )}
                                       </div>
                                       <SyntaxHighlighter
                                         language="cobol"
@@ -1118,18 +1154,31 @@ export default function Home() {
                 >
                   {s.snippet}
                 </SyntaxHighlighter>
-                {(s.source || s.path) && (
+                {(s.source || s.path || s.file) && (
                   <button
-                    onClick={() => handleViewFullFile(s.source || s.path || "", i)}
-                    className="mt-2 rounded border border-gray-600 bg-gray-800 px-2 py-1 text-xs text-gray-300 hover:bg-gray-700"
+                    onClick={() => handleViewFullFile(s.source || s.path || s.file || "", i)}
+                    disabled={expandedFileLoading && expandedSourceIdx === i}
+                    className="mt-2 rounded border border-gray-600 bg-gray-800 px-2 py-1 text-xs text-gray-300 hover:bg-gray-700 disabled:opacity-50"
                   >
-                    {expandedSourceIdx === i && expandedFile ? "Collapse" : "View full file"}
+                    {expandedFileLoading && expandedSourceIdx === i
+                      ? "Loading file from index..."
+                      : expandedSourceIdx === i && expandedFile
+                        ? "Collapse"
+                        : "View full file"}
                   </button>
                 )}
-                {expandedSourceIdx === i && expandedFile && (
+                {expandedSourceIdx === i && expandedFileLoading && (
+                  <div className="mt-3 rounded border border-gray-700 bg-gray-950 p-3 text-sm text-gray-400">
+                    Loading file from index...
+                  </div>
+                )}
+                {expandedSourceIdx === i && expandedFile && !expandedFileLoading && (
                   <div className="mt-3 rounded border border-gray-700 bg-gray-950 p-3">
                     <div className="mb-1 text-xs text-gray-400">
                       {expandedFile.path} ({expandedFile.line_count} lines)
+                      {expandedFile.chunks_found != null && (
+                        <span className="ml-2">· Showing {expandedFile.chunks_found} chunks from Pinecone index</span>
+                      )}
                     </div>
                     <SyntaxHighlighter
                       language="cobol"
