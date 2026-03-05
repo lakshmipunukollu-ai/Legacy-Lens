@@ -9,7 +9,7 @@
 
 ## 📹 Demo Video
 
-[Watch the demo on Loom](LINK_TO_BE_ADDED)
+[Watch the demo on Loom](https://www.loom.com/share/f037e325963f4a988fd31a5387dceba8)
 
 ## Architecture
 
